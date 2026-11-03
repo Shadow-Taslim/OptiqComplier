@@ -1,0 +1,12 @@
+{
+  "table": "departments",
+  "catalogVersion": "sample-v1",
+  "primaryKey": ["id"],
+  "columns": [
+    { "name": "id", "type": "integer", "nullable": false },
+    { "name": "dept_name", "type": "text", "nullable": false },
+    { "name": "location", "type": "text", "nullable": false },
+    { "name": "budget", "type": "decimal", "nullable": false, "scale": 2 }
+  ],
+  "dataFile": "../departments.csv"
+}

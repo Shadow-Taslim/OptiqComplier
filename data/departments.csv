@@ -1,0 +1,5 @@
+id,dept_name,location,budget
+1,Engineering,HQ,250000.00
+2,Marketing,Remote,120000.00
+3,Sales,HQ,180000.00
+4,Human Resources,NY,90000.00

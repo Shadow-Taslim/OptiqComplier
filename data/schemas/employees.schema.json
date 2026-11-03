@@ -1,0 +1,19 @@
+{
+  "table": "employees",
+  "catalogVersion": "sample-v1",
+  "primaryKey": ["id"],
+  "columns": [
+    { "name": "id", "type": "integer", "nullable": false },
+    { "name": "name", "type": "text", "nullable": false },
+    { "name": "dept_id", "type": "integer", "nullable": false },
+    { "name": "salary", "type": "decimal", "nullable": false, "scale": 2 },
+    { "name": "hire_date", "type": "date", "nullable": false }
+  ],
+  "foreignKeys": [
+    {
+      "columns": ["dept_id"],
+      "references": { "table": "departments", "columns": ["id"] }
+    }
+  ],
+  "dataFile": "../employees.csv"
+}
