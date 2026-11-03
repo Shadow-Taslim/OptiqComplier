@@ -1,0 +1,14 @@
+{
+  "name": "optiq-compiler-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SQL mini-compiler, Express API, and React frontend workspace",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  }
+}

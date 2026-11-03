@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# JavaScript and Vite output
+dist/
+*.tsbuildinfo
+
+# CMake and native builds
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Generated Flex/Bison sources
+*.lex.c
+*.tab.c
+*.tab.h
+
+# Local configuration and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
