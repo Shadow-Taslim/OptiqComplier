@@ -77,8 +77,9 @@ std::string functionName(FunctionCall::Function function) {
     throw std::logic_error("Unknown function");
 }
 
-void indent(std::ostream& output, int depth) {
+std::ostream& indent(std::ostream& output, int depth) {
     output << std::string(static_cast<std::size_t>(depth) * 2, ' ');
+    return output;
 }
 
 void writeExpression(std::ostream& output, const Expression& expression, int depth);
