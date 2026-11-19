@@ -8,5 +8,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(OPTIQ_BUILD_TESTS "Build OptiqCompiler tests" ON)
 
-# Week 1: project configuration only. Library, CLI, Flex/Bison, and test
-# targets will be added with their source files in later iterations.
+add_library(optiq_ast
+    src/ast_printer.cpp
+)
+target_include_directories(optiq_ast PUBLIC include)
+
+if(OPTIQ_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(optiq_ast_tests
+        ../tests/compiler/ast_tests.cpp
+    )
+    target_link_libraries(optiq_ast_tests PRIVATE optiq_ast)
+    add_test(NAME ast_tests COMMAND optiq_ast_tests)
+endif()
