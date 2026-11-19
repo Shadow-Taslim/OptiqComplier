@@ -45,6 +45,9 @@ target_include_directories(optiq_parser
 )
 target_link_libraries(optiq_parser PUBLIC optiq_lexer)
 
+add_executable(optiq_cli src/cli.cpp)
+target_link_libraries(optiq_cli PRIVATE optiq_parser)
+
 if(OPTIQ_BUILD_TESTS)
     enable_testing()
 
@@ -65,4 +68,17 @@ if(OPTIQ_BUILD_TESTS)
     )
     target_link_libraries(optiq_parser_tests PRIVATE optiq_parser)
     add_test(NAME parser_tests COMMAND optiq_parser_tests)
+
+    add_test(NAME cli_valid
+        COMMAND optiq_cli "SELECT name FROM employees WHERE id = 1;"
+    )
+    set_tests_properties(cli_valid PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"type\": \"SelectStatement\""
+    )
+
+    add_test(NAME cli_invalid COMMAND optiq_cli "SELECT FROM employees")
+    set_tests_properties(cli_invalid PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cli_help COMMAND optiq_cli --help)
+    set_tests_properties(cli_help PROPERTIES PASS_REGULAR_EXPRESSION "Usage: optiq_cli")
 endif()
