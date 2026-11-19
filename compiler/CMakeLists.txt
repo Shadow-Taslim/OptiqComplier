@@ -69,6 +69,14 @@ if(OPTIQ_BUILD_TESTS)
     target_link_libraries(optiq_parser_tests PRIVATE optiq_parser)
     add_test(NAME parser_tests COMMAND optiq_parser_tests)
 
+    add_executable(optiq_fixture_tests
+        ../tests/compiler/fixture_tests.cpp
+    )
+    target_link_libraries(optiq_fixture_tests PRIVATE optiq_parser)
+    add_test(NAME fixture_tests
+        COMMAND optiq_fixture_tests "${PROJECT_SOURCE_DIR}/.."
+    )
+
     add_test(NAME cli_valid
         COMMAND optiq_cli "SELECT name FROM employees WHERE id = 1;"
     )
@@ -81,4 +89,11 @@ if(OPTIQ_BUILD_TESTS)
 
     add_test(NAME cli_help COMMAND optiq_cli --help)
     set_tests_properties(cli_help PROPERTIES PASS_REGULAR_EXPRESSION "Usage: optiq_cli")
+
+    add_test(NAME cli_stdin
+        COMMAND ${CMAKE_COMMAND}
+            -DCLI=$<TARGET_FILE:optiq_cli>
+            -DSQL_FILE=${PROJECT_SOURCE_DIR}/../tests/fixtures/01-ordered-projection.sql
+            -P ${PROJECT_SOURCE_DIR}/../tests/compiler/cli_stdin_test.cmake
+    )
 endif()
