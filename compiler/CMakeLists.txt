@@ -28,6 +28,23 @@ target_include_directories(optiq_lexer
 )
 target_link_libraries(optiq_lexer PUBLIC optiq_ast)
 
+find_package(BISON 3.0 REQUIRED)
+BISON_TARGET(SqlParser src/parser.y ${CMAKE_CURRENT_BINARY_DIR}/sql_parser.cpp
+    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_parser.hpp
+    COMPILE_FLAGS "--warnings=all"
+)
+set_source_files_properties(${BISON_SqlParser_OUTPUTS} PROPERTIES LANGUAGE CXX)
+
+add_library(optiq_parser
+    src/parser.cpp
+    ${BISON_SqlParser_OUTPUTS}
+)
+target_include_directories(optiq_parser
+    PUBLIC include
+    PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(optiq_parser PUBLIC optiq_lexer)
+
 if(OPTIQ_BUILD_TESTS)
     enable_testing()
 
@@ -42,4 +59,10 @@ if(OPTIQ_BUILD_TESTS)
     )
     target_link_libraries(optiq_lexer_tests PRIVATE optiq_lexer)
     add_test(NAME lexer_tests COMMAND optiq_lexer_tests)
+
+    add_executable(optiq_parser_tests
+        ../tests/compiler/parser_tests.cpp
+    )
+    target_link_libraries(optiq_parser_tests PRIVATE optiq_parser)
+    add_test(NAME parser_tests COMMAND optiq_parser_tests)
 endif()
