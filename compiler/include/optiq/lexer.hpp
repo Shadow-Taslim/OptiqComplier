@@ -12,21 +12,23 @@ namespace optiq {
 
 enum class TokenKind {
     End,
+    // Keywords (course language: int, float, bool, if, else, while, print,
+    // true, false)
+    Int, Float, Bool, If, Else, While, Print, True, False,
+    // Names and literals
     Identifier,
     IntegerLiteral,
-    DecimalLiteral,
-    StringLiteral,
-    Select, From, As, Inner, Join, On, Where,
-    Group, By, Order, Asc, Desc, Limit,
-    And, Or, Not,
-    Count, Sum, Average, Minimum, Maximum,
-    Let, If, Else, While, Print, True, False,
-    LeftParen, RightParen, LeftBrace, RightBrace, Comma, Semicolon, Dot,
-    Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-    Plus, Minus, Star, Slash
+    FloatLiteral,
+    // Operators
+    Plus, Minus, Star, Slash, Percent,
+    Less, Greater, LessEqual, GreaterEqual, EqualEqual, NotEqual,
+    AndAnd, OrOr, Bang,
+    Assign,
+    // Delimiters
+    LeftParen, RightParen, LeftBrace, RightBrace, Semicolon
 };
 
-using TokenValue = std::variant<std::monostate, std::int64_t, double, std::string>;
+using TokenValue = std::variant<std::monostate, std::int64_t, double, bool, std::string>;
 
 struct Token {
     TokenKind kind = TokenKind::End;
@@ -47,7 +49,7 @@ struct LexResult {
     bool success() const { return !error.has_value(); }
 };
 
-LexResult tokenize(const std::string& sql);
+LexResult tokenize(const std::string& source);
 std::string tokenKindName(TokenKind kind);
 
 } // namespace optiq

@@ -1,9 +1,8 @@
 #include "scanner_state.hpp"
 
 #include <charconv>
-#include <cctype>
 #include <cmath>
-#include <cstdlib>
+#include <string>
 #include <unordered_map>
 
 namespace optiq {
@@ -33,32 +32,27 @@ void ScannerState::addIdentifier(const char* text, std::size_t length) {
 }
 
 void ScannerState::addKeyword(const char* text) {
+    // Keywords are lowercase and case-sensitive, as in C-like languages.
     static const std::unordered_map<std::string, TokenKind> keywords = {
-        {"SELECT", TokenKind::Select}, {"FROM", TokenKind::From},
-        {"AS", TokenKind::As}, {"INNER", TokenKind::Inner},
-        {"JOIN", TokenKind::Join}, {"ON", TokenKind::On},
-        {"WHERE", TokenKind::Where}, {"GROUP", TokenKind::Group},
-        {"BY", TokenKind::By}, {"ORDER", TokenKind::Order},
-        {"ASC", TokenKind::Asc}, {"DESC", TokenKind::Desc},
-        {"LIMIT", TokenKind::Limit}, {"AND", TokenKind::And},
-        {"OR", TokenKind::Or}, {"NOT", TokenKind::Not},
-        {"COUNT", TokenKind::Count}, {"SUM", TokenKind::Sum},
-        {"AVG", TokenKind::Average}, {"MIN", TokenKind::Minimum},
-        {"MAX", TokenKind::Maximum}, {"LET", TokenKind::Let},
-        {"IF", TokenKind::If}, {"ELSE", TokenKind::Else},
-        {"WHILE", TokenKind::While}, {"PRINT", TokenKind::Print},
-        {"TRUE", TokenKind::True}, {"FALSE", TokenKind::False}
+        {"int", TokenKind::Int}, {"float", TokenKind::Float},
+        {"bool", TokenKind::Bool}, {"if", TokenKind::If},
+        {"else", TokenKind::Else}, {"while", TokenKind::While},
+        {"print", TokenKind::Print}
     };
 
-    std::string keyword(text);
-    for (char& ch : keyword) {
-        ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    const std::string word(text);
+    if (word == "true" || word == "false") {
+        if (result.error) return;
+        const bool value = word == "true";
+        result.tokens.push_back(
+            Token{value ? TokenKind::True : TokenKind::False, word, value, current});
+        return;
     }
-    const auto found = keywords.find(keyword);
+    const auto found = keywords.find(word);
     if (found == keywords.end()) {
-        addIdentifier(text, keyword.size());
+        addIdentifier(text, word.size());
     } else {
-        add(found->second, text, keyword.size());
+        add(found->second, text, word.size());
     }
 }
 
@@ -73,34 +67,19 @@ void ScannerState::addInteger(const char* text) {
     result.tokens.push_back(Token{TokenKind::IntegerLiteral, text, value, current});
 }
 
-void ScannerState::addDecimal(const char* text) {
+void ScannerState::addFloat(const char* text) {
     try {
         std::size_t consumed = 0;
         const std::string lexeme(text);
         const double value = std::stod(lexeme, &consumed);
         if (consumed != lexeme.size() || !std::isfinite(value)) {
-            fail("Invalid decimal literal: " + lexeme);
+            fail("Invalid floating-point literal: " + lexeme);
             return;
         }
-        result.tokens.push_back(Token{TokenKind::DecimalLiteral, lexeme, value, current});
+        result.tokens.push_back(Token{TokenKind::FloatLiteral, lexeme, value, current});
     } catch (const std::exception&) {
-        fail("Invalid or out-of-range decimal literal: " + std::string(text));
+        fail("Invalid or out-of-range floating-point literal: " + std::string(text));
     }
-}
-
-void ScannerState::addString(const char* text, std::size_t length) {
-    std::string value;
-    value.reserve(length - 2);
-    for (std::size_t i = 1; i + 1 < length; ++i) {
-        if (text[i] == '\'' && i + 2 < length && text[i + 1] == '\'') {
-            value.push_back('\'');
-            ++i;
-        } else {
-            value.push_back(text[i]);
-        }
-    }
-    result.tokens.push_back(Token{TokenKind::StringLiteral, std::string(text, length),
-                                  std::move(value), current});
 }
 
 void ScannerState::fail(const std::string& message) {

@@ -16,17 +16,17 @@ int yylex_destroy(yyscan_t scanner);
 
 namespace optiq {
 
-LexResult tokenize(const std::string& sql) {
+LexResult tokenize(const std::string& source) {
     ScannerState state;
     yyscan_t scanner = nullptr;
     if (yylex_init_extra(&state, &scanner) != 0) {
-        throw std::runtime_error("Unable to initialize the SQL lexer");
+        throw std::runtime_error("Unable to initialize the lexer");
     }
 
     YY_BUFFER_STATE buffer = nullptr;
     try {
-        buffer = yy_scan_string(sql.c_str(), scanner);
-        if (!buffer) throw std::runtime_error("Unable to create the SQL lexer buffer");
+        buffer = yy_scan_string(source.c_str(), scanner);
+        if (!buffer) throw std::runtime_error("Unable to create the lexer buffer");
         yylex(scanner);
         yy_delete_buffer(buffer, scanner);
         buffer = nullptr;
@@ -49,53 +49,36 @@ std::string tokenKindName(TokenKind kind) {
     case TokenKind::End: return "end of input";
     case TokenKind::Identifier: return "identifier";
     case TokenKind::IntegerLiteral: return "integer literal";
-    case TokenKind::DecimalLiteral: return "decimal literal";
-    case TokenKind::StringLiteral: return "string literal";
-    case TokenKind::Select: return "SELECT";
-    case TokenKind::From: return "FROM";
-    case TokenKind::As: return "AS";
-    case TokenKind::Inner: return "INNER";
-    case TokenKind::Join: return "JOIN";
-    case TokenKind::On: return "ON";
-    case TokenKind::Where: return "WHERE";
-    case TokenKind::Group: return "GROUP";
-    case TokenKind::By: return "BY";
-    case TokenKind::Order: return "ORDER";
-    case TokenKind::Asc: return "ASC";
-    case TokenKind::Desc: return "DESC";
-    case TokenKind::Limit: return "LIMIT";
-    case TokenKind::And: return "AND";
-    case TokenKind::Or: return "OR";
-    case TokenKind::Not: return "NOT";
-    case TokenKind::Count: return "COUNT";
-    case TokenKind::Sum: return "SUM";
-    case TokenKind::Average: return "AVG";
-    case TokenKind::Minimum: return "MIN";
-    case TokenKind::Maximum: return "MAX";
-    case TokenKind::Let: return "LET";
-    case TokenKind::If: return "IF";
-    case TokenKind::Else: return "ELSE";
-    case TokenKind::While: return "WHILE";
-    case TokenKind::Print: return "PRINT";
-    case TokenKind::True: return "TRUE";
-    case TokenKind::False: return "FALSE";
-    case TokenKind::LeftParen: return "(";
-    case TokenKind::RightParen: return ")";
-    case TokenKind::LeftBrace: return "{";
-    case TokenKind::RightBrace: return "}";
-    case TokenKind::Comma: return ",";
-    case TokenKind::Semicolon: return ";";
-    case TokenKind::Dot: return ".";
-    case TokenKind::Equal: return "=";
-    case TokenKind::NotEqual: return "!=";
-    case TokenKind::Less: return "<";
-    case TokenKind::LessEqual: return "<=";
-    case TokenKind::Greater: return ">";
-    case TokenKind::GreaterEqual: return ">=";
+    case TokenKind::FloatLiteral: return "floating-point literal";
+    case TokenKind::Int: return "int";
+    case TokenKind::Float: return "float";
+    case TokenKind::Bool: return "bool";
+    case TokenKind::If: return "if";
+    case TokenKind::Else: return "else";
+    case TokenKind::While: return "while";
+    case TokenKind::Print: return "print";
+    case TokenKind::True: return "true";
+    case TokenKind::False: return "false";
     case TokenKind::Plus: return "+";
     case TokenKind::Minus: return "-";
     case TokenKind::Star: return "*";
     case TokenKind::Slash: return "/";
+    case TokenKind::Percent: return "%";
+    case TokenKind::Less: return "<";
+    case TokenKind::Greater: return ">";
+    case TokenKind::LessEqual: return "<=";
+    case TokenKind::GreaterEqual: return ">=";
+    case TokenKind::EqualEqual: return "==";
+    case TokenKind::NotEqual: return "!=";
+    case TokenKind::AndAnd: return "&&";
+    case TokenKind::OrOr: return "||";
+    case TokenKind::Bang: return "!";
+    case TokenKind::Assign: return "=";
+    case TokenKind::LeftParen: return "(";
+    case TokenKind::RightParen: return ")";
+    case TokenKind::LeftBrace: return "{";
+    case TokenKind::RightBrace: return "}";
+    case TokenKind::Semicolon: return ";";
     }
     return "unknown token";
 }

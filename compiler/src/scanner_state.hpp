@@ -14,8 +14,7 @@ public:
     void addIdentifier(const char* text, std::size_t length);
     void addKeyword(const char* text);
     void addInteger(const char* text);
-    void addDecimal(const char* text);
-    void addString(const char* text, std::size_t length);
+    void addFloat(const char* text);
     void fail(const std::string& message);
     void fail(const std::string& message, SourceLocation location);
 
