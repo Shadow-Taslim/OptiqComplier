@@ -11,6 +11,7 @@
 
 [ \t\r\n]+                  { }
 "--"[^\n]*                  { }
+"//"[^\n]*                  { }
 "/*"                        { yyextra->blockCommentStart = yyextra->current; BEGIN(BLOCK_COMMENT); }
 <BLOCK_COMMENT>"*/"         { BEGIN(INITIAL); }
 <BLOCK_COMMENT>(\n|.)       { }
@@ -26,6 +27,8 @@
 
 "("                         { yyextra->add(optiq::TokenKind::LeftParen, yytext, yyleng); }
 ")"                         { yyextra->add(optiq::TokenKind::RightParen, yytext, yyleng); }
+"{"                         { yyextra->add(optiq::TokenKind::LeftBrace, yytext, yyleng); }
+"}"                         { yyextra->add(optiq::TokenKind::RightBrace, yytext, yyleng); }
 ","                         { yyextra->add(optiq::TokenKind::Comma, yytext, yyleng); }
 ";"                         { yyextra->add(optiq::TokenKind::Semicolon, yytext, yyleng); }
 "."                         { yyextra->add(optiq::TokenKind::Dot, yytext, yyleng); }

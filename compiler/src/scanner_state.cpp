@@ -44,7 +44,10 @@ void ScannerState::addKeyword(const char* text) {
         {"OR", TokenKind::Or}, {"NOT", TokenKind::Not},
         {"COUNT", TokenKind::Count}, {"SUM", TokenKind::Sum},
         {"AVG", TokenKind::Average}, {"MIN", TokenKind::Minimum},
-        {"MAX", TokenKind::Maximum}
+        {"MAX", TokenKind::Maximum}, {"LET", TokenKind::Let},
+        {"IF", TokenKind::If}, {"ELSE", TokenKind::Else},
+        {"WHILE", TokenKind::While}, {"PRINT", TokenKind::Print},
+        {"TRUE", TokenKind::True}, {"FALSE", TokenKind::False}
     };
 
     std::string keyword(text);

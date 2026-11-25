@@ -20,7 +20,8 @@ enum class TokenKind {
     Group, By, Order, Asc, Desc, Limit,
     And, Or, Not,
     Count, Sum, Average, Minimum, Maximum,
-    LeftParen, RightParen, Comma, Semicolon, Dot,
+    Let, If, Else, While, Print, True, False,
+    LeftParen, RightParen, LeftBrace, RightBrace, Comma, Semicolon, Dot,
     Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
     Plus, Minus, Star, Slash
 };
