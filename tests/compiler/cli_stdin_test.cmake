@@ -1,20 +1,15 @@
-if(NOT DEFINED CLI)
-    message(FATAL_ERROR "CLI must be provided")
-endif()
-
-set(source_file "${CMAKE_CURRENT_BINARY_DIR}/optiq-stdin-test.oq")
-file(WRITE "${source_file}" "int x;\nx = 40 + 2;\nprint(x);\n")
+# Runs optiq_cli with a source file piped through stdin and checks that
+# TAC output is produced (exit code 0 and at least one control-flow
+# instruction from the sample program).
 execute_process(
-    COMMAND "${CLI}"
-    INPUT_FILE "${source_file}"
+    COMMAND sh -c "\"${CLI}\" < \"${SOURCE_FILE}\""
     RESULT_VARIABLE status
     OUTPUT_VARIABLE output
-    ERROR_VARIABLE error
+    ERROR_VARIABLE errors
 )
-
 if(NOT status EQUAL 0)
-    message(FATAL_ERROR "CLI stdin mode exited with ${status}: ${error}")
+    message(FATAL_ERROR "optiq_cli failed on stdin input: ${errors}")
 endif()
-if(NOT output MATCHES "Program")
-    message(FATAL_ERROR "CLI stdin mode did not print an AST: ${output}")
+if(NOT output MATCHES "ifFalse")
+    message(FATAL_ERROR "optiq_cli produced no TAC for stdin input: ${output}")
 endif()
