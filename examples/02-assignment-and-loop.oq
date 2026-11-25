@@ -1,6 +1,0 @@
-// Assignment and a while loop
-let threshold = 50000;
-while (threshold < 100000) {
-    threshold = threshold + 10000;
-}
-print(threshold);
