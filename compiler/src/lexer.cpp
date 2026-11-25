@@ -72,8 +72,17 @@ std::string tokenKindName(TokenKind kind) {
     case TokenKind::Average: return "AVG";
     case TokenKind::Minimum: return "MIN";
     case TokenKind::Maximum: return "MAX";
+    case TokenKind::Let: return "LET";
+    case TokenKind::If: return "IF";
+    case TokenKind::Else: return "ELSE";
+    case TokenKind::While: return "WHILE";
+    case TokenKind::Print: return "PRINT";
+    case TokenKind::True: return "TRUE";
+    case TokenKind::False: return "FALSE";
     case TokenKind::LeftParen: return "(";
     case TokenKind::RightParen: return ")";
+    case TokenKind::LeftBrace: return "{";
+    case TokenKind::RightBrace: return "}";
     case TokenKind::Comma: return ",";
     case TokenKind::Semicolon: return ";";
     case TokenKind::Dot: return ".";
