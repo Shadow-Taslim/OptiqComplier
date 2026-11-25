@@ -32,15 +32,22 @@ void ScannerState::addIdentifier(const char* text, std::size_t length) {
 }
 
 void ScannerState::addKeyword(const char* text) {
+    // Keywords are lowercase and case-sensitive, as in C-like languages.
     static const std::unordered_map<std::string, TokenKind> keywords = {
-        {"int", TokenKind::IntType}, {"float", TokenKind::FloatType},
-        {"bool", TokenKind::BoolType}, {"if", TokenKind::If},
+        {"int", TokenKind::Int}, {"float", TokenKind::Float},
+        {"bool", TokenKind::Bool}, {"if", TokenKind::If},
         {"else", TokenKind::Else}, {"while", TokenKind::While},
-        {"print", TokenKind::Print}, {"true", TokenKind::True},
-        {"false", TokenKind::False}
+        {"print", TokenKind::Print}
     };
 
     const std::string word(text);
+    if (word == "true" || word == "false") {
+        if (result.error) return;
+        const bool value = word == "true";
+        result.tokens.push_back(
+            Token{value ? TokenKind::True : TokenKind::False, word, value, current});
+        return;
+    }
     const auto found = keywords.find(word);
     if (found == keywords.end()) {
         addIdentifier(text, word.size());
@@ -66,12 +73,12 @@ void ScannerState::addFloat(const char* text) {
         const std::string lexeme(text);
         const double value = std::stod(lexeme, &consumed);
         if (consumed != lexeme.size() || !std::isfinite(value)) {
-            fail("Invalid float literal: " + lexeme);
+            fail("Invalid floating-point literal: " + lexeme);
             return;
         }
         result.tokens.push_back(Token{TokenKind::FloatLiteral, lexeme, value, current});
     } catch (const std::exception&) {
-        fail("Invalid or out-of-range float literal: " + std::string(text));
+        fail("Invalid or out-of-range floating-point literal: " + std::string(text));
     }
 }
 
