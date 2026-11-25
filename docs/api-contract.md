@@ -1,7 +1,35 @@
 # Express ↔ C++ Compiler JSON Contract
 
-**Contract version:** `1.0`  
+**Contract version:** `1.1`  
 **Status:** Week 1 definition; implementation starts in a later week.
+
+## Version 1.1 — Optiq Program Source
+
+The compiler now accepts an **Optiq program**, not only a single SQL statement (see [language-spec.md](language-spec.md)).
+
+- New request field `source` (string): a full Optiq program. Exactly one of `source` or `sql` must be present.
+- The existing `sql` field remains as a compatibility alias meaning "a program containing one SQL query".
+- `compile` on a program performs lexing, parsing, semantic analysis, and planning for every statement, including embedded queries.
+- `execute` on a program additionally interprets statements in order; query results bound with `LET` are materialized for later statements.
+- New error code `LANGUAGE_SYNTAX_ERROR` (stage `lex` or `parse`) for imperative-language syntax errors. `SQL_SYNTAX_ERROR` remains for errors inside the SQL subset; both share the structured `error` shape.
+- All other transport rules, the response envelope, plan nodes, result, statistics, and error shapes are unchanged from version 1.0.
+
+```json
+{
+  "contractVersion": "1.1",
+  "requestId": "0f4b2dd1-47b7-4bb0-a96f-f7bb53ac7e52",
+  "operation": "execute",
+  "catalog": "sample-v1",
+  "source": "let t = 70000;\nlet r = SELECT name FROM employees WHERE salary >= t;\nprint(r);",
+  "options": {
+    "optimize": true,
+    "maxRows": 100,
+    "timeoutMs": 2000
+  }
+}
+```
+
+For `execute` on a program, `result` is `null` and program output is returned in an added `output` array of printed lines; query statements append their rendered tables. The sections below are the unchanged version 1.0 contract, which stays valid for single-query requests.
 
 ## Transport Rules
 
@@ -315,6 +343,7 @@ Request SQL: `SELECT name FROM employees LIMIT 1;`
 | --- | --- | --- |
 | `INVALID_REQUEST` | `request` | Malformed JSON, missing fields, or invalid options. |
 | `SQL_SYNTAX_ERROR` | `lex` or `parse` | Invalid token or grammar error. |
+| `LANGUAGE_SYNTAX_ERROR` | `lex` or `parse` | Invalid token or grammar error in imperative-language syntax. |
 | `UNKNOWN_TABLE` | `semantic` | Referenced table is absent. |
 | `UNKNOWN_COLUMN` | `semantic` | Referenced column is absent or ambiguous. |
 | `TYPE_MISMATCH` | `semantic` | Operator or aggregate types are incompatible. |
