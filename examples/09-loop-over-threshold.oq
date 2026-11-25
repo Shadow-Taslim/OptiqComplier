@@ -1,8 +1,0 @@
-// Re-run a query while tightening the threshold
-let threshold = 50000;
-while (threshold <= 90000) {
-    let matches = SELECT name FROM employees WHERE salary >= threshold;
-    print(threshold);
-    print(matches);
-    threshold = threshold + 20000;
-}
