@@ -21,26 +21,26 @@
 [0-9]+                      { yyextra->addInteger(yytext); }
 [A-Za-z_][A-Za-z0-9_]*      { yyextra->addKeyword(yytext); }
 
-"&&"                        { yyextra->add(optiq::TokenKind::AndAnd, yytext, yyleng); }
-"||"                        { yyextra->add(optiq::TokenKind::OrOr, yytext, yyleng); }
-"=="                        { yyextra->add(optiq::TokenKind::EqualEqual, yytext, yyleng); }
-"!="                        { yyextra->add(optiq::TokenKind::NotEqual, yytext, yyleng); }
-"<="                        { yyextra->add(optiq::TokenKind::LessEqual, yytext, yyleng); }
-">="                        { yyextra->add(optiq::TokenKind::GreaterEqual, yytext, yyleng); }
-"<"                         { yyextra->add(optiq::TokenKind::Less, yytext, yyleng); }
-">"                         { yyextra->add(optiq::TokenKind::Greater, yytext, yyleng); }
-"="                         { yyextra->add(optiq::TokenKind::Assign, yytext, yyleng); }
-"!"                         { yyextra->add(optiq::TokenKind::Bang, yytext, yyleng); }
-"+"                         { yyextra->add(optiq::TokenKind::Plus, yytext, yyleng); }
-"-"                         { yyextra->add(optiq::TokenKind::Minus, yytext, yyleng); }
-"*"                         { yyextra->add(optiq::TokenKind::Star, yytext, yyleng); }
-"/"                         { yyextra->add(optiq::TokenKind::Slash, yytext, yyleng); }
-"%"                         { yyextra->add(optiq::TokenKind::Percent, yytext, yyleng); }
 "("                         { yyextra->add(optiq::TokenKind::LeftParen, yytext, yyleng); }
 ")"                         { yyextra->add(optiq::TokenKind::RightParen, yytext, yyleng); }
 "{"                         { yyextra->add(optiq::TokenKind::LeftBrace, yytext, yyleng); }
 "}"                         { yyextra->add(optiq::TokenKind::RightBrace, yytext, yyleng); }
 ";"                         { yyextra->add(optiq::TokenKind::Semicolon, yytext, yyleng); }
+"=="                        { yyextra->add(optiq::TokenKind::Equal, yytext, yyleng); }
+"="                         { yyextra->add(optiq::TokenKind::Assign, yytext, yyleng); }
+"!="                        { yyextra->add(optiq::TokenKind::NotEqual, yytext, yyleng); }
+"<="                        { yyextra->add(optiq::TokenKind::LessEqual, yytext, yyleng); }
+">="                        { yyextra->add(optiq::TokenKind::GreaterEqual, yytext, yyleng); }
+"<"                         { yyextra->add(optiq::TokenKind::Less, yytext, yyleng); }
+">"                         { yyextra->add(optiq::TokenKind::Greater, yytext, yyleng); }
+"+"                         { yyextra->add(optiq::TokenKind::Plus, yytext, yyleng); }
+"-"                         { yyextra->add(optiq::TokenKind::Minus, yytext, yyleng); }
+"*"                         { yyextra->add(optiq::TokenKind::Star, yytext, yyleng); }
+"/"                         { yyextra->add(optiq::TokenKind::Slash, yytext, yyleng); }
+"%"                         { yyextra->add(optiq::TokenKind::Percent, yytext, yyleng); }
+"&&"                        { yyextra->add(optiq::TokenKind::LogicalAnd, yytext, yyleng); }
+"||"                        { yyextra->add(optiq::TokenKind::LogicalOr, yytext, yyleng); }
+"!"                         { yyextra->add(optiq::TokenKind::Not, yytext, yyleng); }
 
 .                           { yyextra->fail("Invalid character: " + std::string(yytext)); return 0; }
 <<EOF>>                     { return 0; }

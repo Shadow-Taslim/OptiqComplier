@@ -14,13 +14,13 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-void expectKinds(const std::string& sql, const std::vector<optiq::TokenKind>& expected) {
-    const auto result = optiq::tokenize(sql);
-    require(result.success(), "tokenization succeeds for: " + sql);
-    require(result.tokens.size() == expected.size(), "token count matches for: " + sql);
+void expectKinds(const std::string& source, const std::vector<optiq::TokenKind>& expected) {
+    const auto result = optiq::tokenize(source);
+    require(result.success(), "tokenization succeeds for: " + source);
+    require(result.tokens.size() == expected.size(), "token count matches for: " + source);
     for (std::size_t i = 0; i < expected.size(); ++i) {
         require(result.tokens[i].kind == expected[i],
-                "token " + std::to_string(i) + " matches for: " + sql);
+                "token " + std::to_string(i) + " matches for: " + source);
     }
 }
 
@@ -30,75 +30,50 @@ int main() {
     using optiq::TokenKind;
     const auto end = TokenKind::End;
 
-    expectKinds("select SeLeCt FROM from WHERE Group by ORDER asc DESC LIMIT",
-                {TokenKind::Select, TokenKind::Select, TokenKind::From, TokenKind::From,
-                 TokenKind::Where, TokenKind::Group, TokenKind::By, TokenKind::Order,
-                 TokenKind::Asc, TokenKind::Desc, TokenKind::Limit, end});
-    expectKinds("AS INNER JOIN ON AND OR NOT COUNT SUM AVG MIN MAX",
-                {TokenKind::As, TokenKind::Inner, TokenKind::Join, TokenKind::On,
-                 TokenKind::And, TokenKind::Or, TokenKind::Not, TokenKind::Count,
-                 TokenKind::Sum, TokenKind::Average, TokenKind::Minimum,
-                 TokenKind::Maximum, end});
-    expectKinds("employee e._col2 ( ) , ; . = == != <> < <= > >= + - * /",
-                {TokenKind::Identifier, TokenKind::Identifier, TokenKind::Dot,
-                 TokenKind::Identifier, TokenKind::LeftParen, TokenKind::RightParen,
-                 TokenKind::Comma, TokenKind::Semicolon, TokenKind::Dot,
-                 TokenKind::Equal, TokenKind::Equal, TokenKind::NotEqual,
-                 TokenKind::NotEqual, TokenKind::Less, TokenKind::LessEqual,
-                 TokenKind::Greater, TokenKind::GreaterEqual, TokenKind::Plus,
-                 TokenKind::Minus, TokenKind::Star, TokenKind::Slash, end});
-    expectKinds("SELECT 42 3.14 'text' FROM t",
-                {TokenKind::Select, TokenKind::IntegerLiteral, TokenKind::DecimalLiteral,
-                 TokenKind::StringLiteral, TokenKind::From, TokenKind::Identifier, end});
-    expectKinds("let Let IF Else WHILE print TRUE false",
-                {TokenKind::Let, TokenKind::Let, TokenKind::If, TokenKind::Else,
-                 TokenKind::While, TokenKind::Print, TokenKind::True, TokenKind::False,
-                 end});
-    expectKinds("{ x } ;",
-                {TokenKind::LeftBrace, TokenKind::Identifier, TokenKind::RightBrace,
-                 TokenKind::Semicolon, end});
+    expectKinds("int float bool if else while print true false",
+                {TokenKind::IntType, TokenKind::FloatType, TokenKind::BoolType,
+                 TokenKind::If, TokenKind::Else, TokenKind::While, TokenKind::Print,
+                 TokenKind::True, TokenKind::False, end});
+    expectKinds("name _total2 INT Let SELECT",
+                {TokenKind::Identifier, TokenKind::Identifier, TokenKind::Identifier,
+                 TokenKind::Identifier, TokenKind::Identifier, end});
+    expectKinds("( ) { } ; = == != < <= > >= + - * / % && || !",
+                {TokenKind::LeftParen, TokenKind::RightParen, TokenKind::LeftBrace,
+                 TokenKind::RightBrace, TokenKind::Semicolon, TokenKind::Assign,
+                 TokenKind::Equal, TokenKind::NotEqual, TokenKind::Less,
+                 TokenKind::LessEqual, TokenKind::Greater, TokenKind::GreaterEqual,
+                 TokenKind::Plus, TokenKind::Minus, TokenKind::Star, TokenKind::Slash,
+                 TokenKind::Percent, TokenKind::LogicalAnd, TokenKind::LogicalOr,
+                 TokenKind::Not, end});
 
-    const auto lineComment = optiq::tokenize("// note\nlet x = 1;");
-    require(lineComment.success(), "line comments tokenize");
-    require(lineComment.tokens.size() == 6 &&
-                lineComment.tokens[0].kind == TokenKind::Let,
-            "// comments are ignored");
-    require(lineComment.tokens[0].location.line == 2,
-            "line tracking survives // comments");
-
-    const auto literals = optiq::tokenize("123 45.67 'Aisha''s'");
-    require(literals.success(), "literal tokenization succeeds");
+    const auto literals = optiq::tokenize("123 45.67");
+    require(literals.success() && literals.tokens.size() == 3,
+            "integer and float literals tokenize");
     require(std::get<std::int64_t>(literals.tokens[0].value) == 123,
             "integer value is converted");
     require(std::get<double>(literals.tokens[1].value) == 45.67,
-            "decimal value is converted");
-    require(std::get<std::string>(literals.tokens[2].value) == "Aisha's",
-            "escaped SQL string is decoded");
+            "float value is converted");
 
-    const auto comments = optiq::tokenize("SELECT /* first\nsecond */ name -- trailing\nFROM t");
-    require(comments.success() && comments.tokens.size() == 5,
+    const auto comments = optiq::tokenize("int x; /* first\nsecond */ // trailing\nprint(x);");
+    require(comments.success() && comments.tokens.size() == 9,
             "line and block comments are ignored");
-    require(comments.tokens[1].location.line == 2 && comments.tokens[1].location.column == 11,
-            "source line and column survive comments");
+    require(comments.tokens[3].kind == TokenKind::Print &&
+                comments.tokens[3].location.line == 3 &&
+                comments.tokens[3].location.column == 1,
+            "source locations survive multiline comments");
 
-    const auto locations = optiq::tokenize("SELECT name\nFROM employees");
-    require(locations.tokens[2].kind == TokenKind::From,
-            "multiline token stream is complete");
-    require(locations.tokens[2].location.line == 2 && locations.tokens[2].location.column == 1,
-            "multiline location is accurate");
-
-    const auto invalid = optiq::tokenize("SELECT @");
+    const auto invalid = optiq::tokenize("int x; @");
     require(!invalid.success() && invalid.error->location.column == 8,
             "invalid character has a precise location");
-    require(!optiq::tokenize("SELECT 'open").success(),
-            "unterminated string is rejected");
-    require(!optiq::tokenize("SELECT /* open").success(),
+    require(!optiq::tokenize("int x; /* open").success(),
             "unterminated block comment is rejected");
-    require(!optiq::tokenize("SELECT 12abc").success(),
+    require(!optiq::tokenize("int 12abc;").success(),
             "malformed numeric literal is rejected");
-    require(!optiq::tokenize("SELECT 999999999999999999999999").success(),
+    require(!optiq::tokenize("int 999999999999999999999999;").success(),
             "out-of-range integer is rejected");
+    require(!optiq::tokenize("print('text');").success(),
+            "SQL string literals are outside the required language");
 
-    std::cout << "PASS: lexer keywords, tokens, literals, comments, and locations\n";
+    std::cout << "PASS: manual-language keywords, operators, literals, comments, and locations\n";
     return 0;
 }

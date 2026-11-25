@@ -15,13 +15,13 @@ add_library(optiq_ast
 target_include_directories(optiq_ast PUBLIC include)
 
 find_package(FLEX 2.6 REQUIRED)
-FLEX_TARGET(SqlLexer src/lexer.l ${CMAKE_CURRENT_BINARY_DIR}/sql_lexer.cpp)
-set_source_files_properties(${FLEX_SqlLexer_OUTPUTS} PROPERTIES LANGUAGE CXX)
+FLEX_TARGET(OptiqLexer src/lexer.l ${CMAKE_CURRENT_BINARY_DIR}/optiq_lexer.cpp)
+set_source_files_properties(${FLEX_OptiqLexer_OUTPUTS} PROPERTIES LANGUAGE CXX)
 
 add_library(optiq_lexer
     src/lexer.cpp
     src/scanner_state.cpp
-    ${FLEX_SqlLexer_OUTPUTS}
+    ${FLEX_OptiqLexer_OUTPUTS}
 )
 target_include_directories(optiq_lexer
     PUBLIC include

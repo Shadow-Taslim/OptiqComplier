@@ -12,23 +12,18 @@ namespace optiq {
 
 enum class TokenKind {
     End,
-    // Keywords (course language: int, float, bool, if, else, while, print,
-    // true, false)
-    Int, Float, Bool, If, Else, While, Print, True, False,
-    // Names and literals
     Identifier,
     IntegerLiteral,
     FloatLiteral,
-    // Operators
+    IntType, FloatType, BoolType,
+    If, Else, While, Print, True, False,
+    LeftParen, RightParen, LeftBrace, RightBrace, Semicolon,
+    Assign, Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
     Plus, Minus, Star, Slash, Percent,
-    Less, Greater, LessEqual, GreaterEqual, EqualEqual, NotEqual,
-    AndAnd, OrOr, Bang,
-    Assign,
-    // Delimiters
-    LeftParen, RightParen, LeftBrace, RightBrace, Semicolon
+    LogicalAnd, LogicalOr, Not
 };
 
-using TokenValue = std::variant<std::monostate, std::int64_t, double, bool, std::string>;
+using TokenValue = std::variant<std::monostate, std::int64_t, double, std::string>;
 
 struct Token {
     TokenKind kind = TokenKind::End;
