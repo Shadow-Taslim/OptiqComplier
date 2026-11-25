@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <string>
+#include <vector>
 
 #include "optiq/ast.hpp"
 #include "optiq/lexer.hpp"
@@ -10,23 +10,14 @@
 namespace optiq {
 
 struct ParseResult {
-    std::unique_ptr<SelectStatement> statement;
-    std::optional<Diagnostic> error;
-
-    bool success() const { return statement != nullptr && !error.has_value(); }
-};
-
-struct ProgramParseResult {
     std::unique_ptr<Program> program;
-    std::optional<Diagnostic> error;
+    std::vector<Diagnostic> errors;
 
-    bool success() const { return program != nullptr && !error.has_value(); }
+    bool success() const { return program != nullptr && errors.empty(); }
 };
 
-// Parses a single SQL SELECT statement (compatibility entry point).
-ParseResult parseSql(const std::string& sql);
-
-// Parses a full Optiq program per docs/language-spec.md.
-ProgramParseResult parseProgram(const std::string& source);
+// Parses a full program in the course-specified language (.mc source).
+// Uses Bison error recovery, so `errors` may contain several diagnostics.
+ParseResult parseProgram(const std::string& source);
 
 } // namespace optiq

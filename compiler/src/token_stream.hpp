@@ -7,6 +7,7 @@
 
 namespace optiq {
 
+// Feeds the pre-tokenized input to the Bison parser one token at a time.
 class TokenStream {
 public:
     explicit TokenStream(const std::vector<Token>& tokens) : tokens(tokens) {}

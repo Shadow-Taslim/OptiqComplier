@@ -1,541 +1,278 @@
+%require "3.0"
+%defines
 %define api.pure full
-%define parse.error verbose
 %locations
-%start input
-
-%lex-param { optiq::TokenStream& tokens }
+%define parse.error verbose
 %parse-param { optiq::TokenStream& tokens }
-%parse-param { optiq::ProgramParseResult& result }
+%parse-param { optiq::ParseResult& result }
+%lex-param { optiq::TokenStream& tokens }
 
 %code requires {
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
-#include "optiq/ast.hpp"
-namespace optiq {
-class TokenStream;
-struct ProgramParseResult;
-}
-}
 
-%code {
-#include <memory>
-#include <utility>
+#include "optiq/ast.hpp"
 #include "optiq/lexer.hpp"
 #include "optiq/parser.hpp"
-#include "token_stream.hpp"
 
-using namespace optiq;
+namespace optiq {
+class TokenStream;
+}
+}
+
+%code provides {
+#include <utility>
+
+#include "token_stream.hpp"
 
 int yylex(YYSTYPE* value, YYLTYPE* location, optiq::TokenStream& tokens);
 void yyerror(YYLTYPE* location, optiq::TokenStream& tokens,
-             optiq::ProgramParseResult& result, const char* message);
+             optiq::ParseResult& result, const char* message);
 
-SourceLocation toLocation(const YYLTYPE& location) {
-    return SourceLocation{location.first_line, location.first_column, 0};
+// Adapts Bison's default YYLTYPE to the AST's SourceLocation.
+static optiq::SourceLocation loc(const YYLTYPE& location) {
+    return optiq::SourceLocation{location.first_line, location.first_column, 0};
 }
 
-Expression* makeBinary(const YYLTYPE& location, BinaryExpression::Operator op,
-                       Expression* left, Expression* right) {
-    return new BinaryExpression(toLocation(location), op,
-                                std::unique_ptr<Expression>(left),
-                                std::unique_ptr<Expression>(right));
+template <typename T>
+std::unique_ptr<T> own(T* pointer) {
+    return std::unique_ptr<T>(pointer);
 }
 }
 
 %union {
-    std::int64_t integerValue;
-    double decimalValue;
     std::string* string;
-    std::optional<std::string>* optionalString;
+    std::int64_t integerValue;
+    double floatValue;
+    bool boolValue;
+    optiq::ValueType valueType;
     optiq::Expression* expression;
-    optiq::ColumnReference* column;
-    optiq::BinaryExpression::Operator binaryOperator;
-    optiq::FunctionCall::Function function;
-    optiq::SelectItem* selectItem;
-    std::vector<optiq::SelectItem>* selectItems;
-    optiq::TableReference* table;
-    optiq::JoinClause* join;
-    optiq::WhereClause* where;
-    optiq::GroupByClause* groupBy;
-    std::vector<optiq::ColumnReference>* columns;
-    optiq::OrderDirection orderDirection;
-    optiq::OrderByItem* orderItem;
-    std::vector<optiq::OrderByItem>* orderItems;
-    optiq::OrderByClause* orderBy;
-    optiq::LimitClause* limit;
-    optiq::SelectStatement* statement;
-    optiq::Statement* stmt;
-    std::vector<std::unique_ptr<optiq::Statement>>* stmtList;
-    optiq::Program* program;
+    optiq::Statement* statement;
+    optiq::BlockStatement* block;
+    std::vector<std::unique_ptr<optiq::Statement>>* statementList;
 }
 
-%token <string> IDENTIFIER STRING_LITERAL
-%token <integerValue> INTEGER_LITERAL
-%token <decimalValue> DECIMAL_LITERAL
+%token <string> IDENTIFIER "identifier"
+%token <integerValue> INTEGER_LITERAL "integer literal"
+%token <floatValue> FLOAT_LITERAL "float literal"
+%token <boolValue> TRUE "true" FALSE "false"
+%token INT "int" FLOAT "float" BOOL "bool"
+%token IF "if" ELSE "else" WHILE "while" PRINT "print"
+%token PLUS "+" MINUS "-" STAR "*" SLASH "/" PERCENT "%"
+%token LESS "<" GREATER ">" LESS_EQUAL "<=" GREATER_EQUAL ">="
+%token EQUAL_EQUAL "==" NOT_EQUAL "!="
+%token AND_AND "&&" OR_OR "||" BANG "!" ASSIGN "="
+%token LEFT_PAREN "(" RIGHT_PAREN ")" LEFT_BRACE "{" RIGHT_BRACE "}"
+%token SEMICOLON ";"
 
-%token SELECT FROM AS INNER JOIN ON WHERE GROUP BY ORDER ASC DESC LIMIT
-%token AND OR NOT COUNT SUM AVG MIN MAX
-%token LET IF ELSE WHILE PRINT TRUE FALSE
-%token LEFT_PAREN RIGHT_PAREN LEFT_BRACE RIGHT_BRACE COMMA SEMICOLON DOT
-%token EQUAL NOT_EQUAL LESS LESS_EQUAL GREATER GREATER_EQUAL
-%token PLUS MINUS STAR SLASH
+%type <valueType> type
+%type <expression> expression logic_or logic_and equality relational additive
+%type <expression> multiplicative unary primary
+%type <statement> statement declaration assignment if_statement while_statement
+%type <statement> print_statement
+%type <block> block
+%type <statementList> statement_list
 
-%type <string> identifier
-%type <optionalString> alias_opt
-%type <selectItem> select_item
-%type <selectItems> select_list
-%type <table> table_reference
-%type <join> join_opt
-%type <where> where_opt
-%type <groupBy> group_by_opt
-%type <columns> column_list
-%type <orderDirection> direction_opt
-%type <orderItem> order_item
-%type <orderItems> order_list
-%type <orderBy> order_by_opt
-%type <limit> limit_opt
-%type <statement> select_statement
-%type <program> program
-%type <stmt> statement let_statement assign_statement print_statement
-%type <stmt> if_statement while_statement query_statement
-%type <stmtList> statement_list block else_part
-%type <expression> expression or_expression and_expression not_expression
-%type <expression> predicate additive_expression multiplicative_expression
-%type <expression> unary_expression primary_expression function_call
-%type <column> column_reference
-%type <binaryOperator> comparison_operator
-%type <function> aggregate_function
-
-%destructor { delete $$; } <string> <optionalString> <expression> <column>
-%destructor { delete $$; } <selectItem> <selectItems> <table> <join> <where>
-%destructor { delete $$; } <groupBy> <columns> <orderItem> <orderItems> <orderBy>
-%destructor { delete $$; } <limit> <statement> <stmt> <stmtList> <program>
+%destructor { delete $$; } <string>
+%destructor { delete $$; } <expression>
+%destructor { delete $$; } <statement>
+%destructor { delete $$; } <block>
+%destructor { delete $$; } <statementList>
 
 %%
 
 input:
-    program
-        { result.program.reset($1); }
-    ;
-
-program:
-    statement_list
-        {
-            auto* parsed = new Program;
-            parsed->statements = std::move(*$1);
-            delete $1;
-            $$ = parsed;
+    statement_list {
+        auto program = std::make_unique<optiq::Program>();
+        for (auto& statement : *$1) {
+            if (statement) program->statements.push_back(std::move(statement));
         }
-    ;
+        delete $1;
+        result.program = std::move(program);
+    }
+;
 
 statement_list:
-    %empty
-        { $$ = new std::vector<std::unique_ptr<Statement>>; }
-    | statement_list statement
-        {
-            $$ = $1;
-            $$->push_back(std::unique_ptr<Statement>($2));
-        }
-    ;
+    %empty { $$ = new std::vector<std::unique_ptr<optiq::Statement>>(); }
+  | statement_list statement {
+        $$ = $1;
+        $$->push_back(own($2)); // nullptr (recovered error) is filtered in `input`
+    }
+;
 
 statement:
-    let_statement      { $$ = $1; }
-    | assign_statement { $$ = $1; }
-    | print_statement  { $$ = $1; }
-    | if_statement     { $$ = $1; }
-    | while_statement  { $$ = $1; }
-    | query_statement  { $$ = $1; }
-    ;
+    declaration
+  | assignment
+  | if_statement
+  | while_statement
+  | print_statement
+  | block { $$ = $1; }
+  | error SEMICOLON {
+        // Error recovery: skip to the next semicolon and continue parsing,
+        // so one bad statement does not hide later errors.
+        yyerrok;
+        $$ = nullptr;
+    }
+;
 
-let_statement:
-    LET identifier EQUAL expression SEMICOLON
-        {
-            $$ = new LetStatement(toLocation(@$), std::move(*$2),
-                                  std::unique_ptr<Expression>($4));
-            delete $2;
-        }
-    | LET identifier EQUAL select_statement SEMICOLON
-        {
-            $$ = new LetStatement(toLocation(@$), std::move(*$2),
-                std::unique_ptr<Expression>(
-                    new QueryExpression(toLocation(@4),
-                                        std::unique_ptr<SelectStatement>($4))));
-            delete $2;
-        }
-    ;
+type:
+    INT   { $$ = optiq::ValueType::Int; }
+  | FLOAT { $$ = optiq::ValueType::Float; }
+  | BOOL  { $$ = optiq::ValueType::Bool; }
+;
 
-assign_statement:
-    IDENTIFIER EQUAL expression SEMICOLON
-        {
-            $$ = new AssignStatement(toLocation(@$), std::move(*$1),
-                                     std::unique_ptr<Expression>($3));
-            delete $1;
-        }
-    | IDENTIFIER EQUAL select_statement SEMICOLON
-        {
-            $$ = new AssignStatement(toLocation(@$), std::move(*$1),
-                std::unique_ptr<Expression>(
-                    new QueryExpression(toLocation(@3),
-                                        std::unique_ptr<SelectStatement>($3))));
-            delete $1;
-        }
-    ;
+declaration:
+    type IDENTIFIER SEMICOLON {
+        $$ = new optiq::DeclarationStatement(loc(@1), $1, *$2);
+        delete $2;
+    }
+  | type IDENTIFIER ASSIGN expression SEMICOLON {
+        $$ = new optiq::DeclarationStatement(loc(@1), $1, *$2, own($4));
+        delete $2;
+    }
+;
 
-print_statement:
-    PRINT LEFT_PAREN expression RIGHT_PAREN SEMICOLON
-        { $$ = new PrintStatement(toLocation(@$), std::unique_ptr<Expression>($3)); }
-    ;
+assignment:
+    IDENTIFIER ASSIGN expression SEMICOLON {
+        $$ = new optiq::AssignmentStatement(loc(@1), *$1, own($3));
+        delete $1;
+    }
+;
 
 if_statement:
-    IF LEFT_PAREN expression RIGHT_PAREN block else_part
-        {
-            auto* parsed = new IfStatement(toLocation(@$), std::unique_ptr<Expression>($3));
-            parsed->thenBlock = std::move(*$5);
-            parsed->elseBlock = std::move(*$6);
-            delete $5;
-            delete $6;
-            $$ = parsed;
-        }
-    ;
-
-else_part:
-    %empty
-        { $$ = new std::vector<std::unique_ptr<Statement>>; }
-    | ELSE block
-        { $$ = $2; }
-    | ELSE if_statement
-        {
-            $$ = new std::vector<std::unique_ptr<Statement>>;
-            $$->push_back(std::unique_ptr<Statement>($2));
-        }
-    ;
+    IF LEFT_PAREN expression RIGHT_PAREN block {
+        $$ = new optiq::IfStatement(loc(@1), own($3), own($5));
+    }
+  | IF LEFT_PAREN expression RIGHT_PAREN block ELSE block {
+        $$ = new optiq::IfStatement(loc(@1), own($3), own($5), own($7));
+    }
+;
 
 while_statement:
-    WHILE LEFT_PAREN expression RIGHT_PAREN block
-        {
-            auto* parsed = new WhileStatement(toLocation(@$), std::unique_ptr<Expression>($3));
-            parsed->body = std::move(*$5);
-            delete $5;
-            $$ = parsed;
-        }
-    ;
+    WHILE LEFT_PAREN expression RIGHT_PAREN block {
+        $$ = new optiq::WhileStatement(loc(@1), own($3), own($5));
+    }
+;
+
+print_statement:
+    PRINT expression SEMICOLON {
+        $$ = new optiq::PrintStatement(loc(@1), own($2));
+    }
+;
 
 block:
-    LEFT_BRACE statement_list RIGHT_BRACE
-        { $$ = $2; }
-    ;
-
-query_statement:
-    select_statement SEMICOLON
-        { $$ = new QueryStatement(toLocation(@$), std::unique_ptr<SelectStatement>($1)); }
-    ;
-
-select_statement:
-    SELECT select_list FROM table_reference join_opt where_opt group_by_opt order_by_opt limit_opt
-        {
-            auto* parsed = new SelectStatement;
-            parsed->location = toLocation(@$);
-            parsed->items = std::move(*$2);
-            parsed->from = std::move(*$4);
-            if ($5) parsed->join = std::move(*$5);
-            if ($6) parsed->where = std::move(*$6);
-            if ($7) parsed->groupBy = std::move(*$7);
-            if ($8) parsed->orderBy = std::move(*$8);
-            if ($9) parsed->limit = std::move(*$9);
-            delete $2;
-            delete $4;
-            delete $5;
-            delete $6;
-            delete $7;
-            delete $8;
-            delete $9;
-            $$ = parsed;
+    LEFT_BRACE statement_list RIGHT_BRACE {
+        auto block = std::make_unique<optiq::BlockStatement>(loc(@1));
+        for (auto& statement : *$2) {
+            if (statement) block->statements.push_back(std::move(statement));
         }
-    ;
+        delete $2;
+        $$ = block.release();
+    }
+;
 
-select_list:
-    select_item
-        {
-            $$ = new std::vector<SelectItem>;
-            $$->push_back(std::move(*$1));
-            delete $1;
-        }
-    | select_list COMMA select_item
-        {
-            $$ = $1;
-            $$->push_back(std::move(*$3));
-            delete $3;
-        }
-    ;
+expression: logic_or;
 
-select_item:
-    STAR
-        { $$ = new SelectItem(SelectItem::wildcard(toLocation(@$))); }
-    | expression alias_opt
-        {
-            $$ = new SelectItem(SelectItem::expressionItem(
-                toLocation(@$), std::unique_ptr<Expression>($1), std::move(*$2)));
-            delete $2;
-        }
-    ;
+logic_or:
+    logic_and
+  | logic_or OR_OR logic_and {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Or,
+                                         own($1), own($3));
+    }
+;
 
-alias_opt:
-    %empty
-        { $$ = new std::optional<std::string>(std::nullopt); }
-    | AS identifier
-        { $$ = new std::optional<std::string>(std::move(*$2)); delete $2; }
-    | identifier
-        { $$ = new std::optional<std::string>(std::move(*$1)); delete $1; }
-    ;
+logic_and:
+    equality
+  | logic_and AND_AND equality {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::And,
+                                         own($1), own($3));
+    }
+;
 
-table_reference:
-    identifier alias_opt
-        {
-            $$ = new TableReference{toLocation(@$), std::move(*$1), std::move(*$2)};
-            delete $1;
-            delete $2;
-        }
-    ;
+equality:
+    relational
+  | equality EQUAL_EQUAL relational {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Equal,
+                                         own($1), own($3));
+    }
+  | equality NOT_EQUAL relational {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::NotEqual,
+                                         own($1), own($3));
+    }
+;
 
-join_opt:
-    %empty
-        { $$ = nullptr; }
-    | JOIN table_reference ON expression
-        {
-            $$ = new JoinClause{toLocation(@$), std::move(*$2),
-                                std::unique_ptr<Expression>($4)};
-            delete $2;
-        }
-    | INNER JOIN table_reference ON expression
-        {
-            $$ = new JoinClause{toLocation(@$), std::move(*$3),
-                                std::unique_ptr<Expression>($5)};
-            delete $3;
-        }
-    ;
+relational:
+    additive
+  | relational LESS additive {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Less,
+                                         own($1), own($3));
+    }
+  | relational GREATER additive {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Greater,
+                                         own($1), own($3));
+    }
+  | relational LESS_EQUAL additive {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::LessEqual,
+                                         own($1), own($3));
+    }
+  | relational GREATER_EQUAL additive {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::GreaterEqual,
+                                         own($1), own($3));
+    }
+;
 
-where_opt:
-    %empty
-        { $$ = nullptr; }
-    | WHERE expression
-        { $$ = new WhereClause{toLocation(@$), std::unique_ptr<Expression>($2)}; }
-    ;
+additive:
+    multiplicative
+  | additive PLUS multiplicative {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Add,
+                                         own($1), own($3));
+    }
+  | additive MINUS multiplicative {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Subtract,
+                                         own($1), own($3));
+    }
+;
 
-group_by_opt:
-    %empty
-        { $$ = nullptr; }
-    | GROUP BY column_list
-        {
-            $$ = new GroupByClause{toLocation(@$), std::move(*$3)};
-            delete $3;
-        }
-    ;
+multiplicative:
+    unary
+  | multiplicative STAR unary {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Multiply,
+                                         own($1), own($3));
+    }
+  | multiplicative SLASH unary {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Divide,
+                                         own($1), own($3));
+    }
+  | multiplicative PERCENT unary {
+        $$ = new optiq::BinaryExpression(loc(@2), optiq::BinaryExpression::Operator::Modulo,
+                                         own($1), own($3));
+    }
+;
 
-column_list:
-    column_reference
-        {
-            $$ = new std::vector<ColumnReference>;
-            $$->push_back(std::move(*$1));
-            delete $1;
-        }
-    | column_list COMMA column_reference
-        {
-            $$ = $1;
-            $$->push_back(std::move(*$3));
-            delete $3;
-        }
-    ;
+unary:
+    primary
+  | MINUS unary {
+        $$ = new optiq::UnaryExpression(loc(@1), optiq::UnaryExpression::Operator::Negate,
+                                        own($2));
+    }
+  | BANG unary {
+        $$ = new optiq::UnaryExpression(loc(@1), optiq::UnaryExpression::Operator::Not,
+                                        own($2));
+    }
+;
 
-order_by_opt:
-    %empty
-        { $$ = nullptr; }
-    | ORDER BY order_list
-        {
-            $$ = new OrderByClause{toLocation(@$), std::move(*$3)};
-            delete $3;
-        }
-    ;
-
-order_list:
-    order_item
-        {
-            $$ = new std::vector<OrderByItem>;
-            $$->push_back(std::move(*$1));
-            delete $1;
-        }
-    | order_list COMMA order_item
-        {
-            $$ = $1;
-            $$->push_back(std::move(*$3));
-            delete $3;
-        }
-    ;
-
-order_item:
-    column_reference direction_opt
-        {
-            $$ = new OrderByItem{toLocation(@$), std::move(*$1), $2};
-            delete $1;
-        }
-    ;
-
-direction_opt:
-    %empty
-        { $$ = OrderDirection::Ascending; }
-    | ASC
-        { $$ = OrderDirection::Ascending; }
-    | DESC
-        { $$ = OrderDirection::Descending; }
-    ;
-
-limit_opt:
-    %empty
-        { $$ = nullptr; }
-    | LIMIT INTEGER_LITERAL
-        { $$ = new LimitClause{toLocation(@$), $2}; }
-    ;
-
-identifier:
-    IDENTIFIER
-        { $$ = $1; }
-    ;
-
-expression:
-    or_expression
-        { $$ = $1; }
-    ;
-
-or_expression:
-    and_expression
-        { $$ = $1; }
-    | or_expression OR and_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::Or, $1, $3); }
-    ;
-
-and_expression:
-    not_expression
-        { $$ = $1; }
-    | and_expression AND not_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::And, $1, $3); }
-    ;
-
-not_expression:
-    predicate
-        { $$ = $1; }
-    | NOT not_expression
-        {
-            $$ = new UnaryExpression(toLocation(@$), UnaryExpression::Operator::Not,
-                                     std::unique_ptr<Expression>($2));
-        }
-    ;
-
-predicate:
-    additive_expression
-        { $$ = $1; }
-    | additive_expression comparison_operator additive_expression
-        { $$ = makeBinary(@$, $2, $1, $3); }
-    ;
-
-comparison_operator:
-    EQUAL          { $$ = BinaryExpression::Operator::Equal; }
-    | NOT_EQUAL    { $$ = BinaryExpression::Operator::NotEqual; }
-    | LESS         { $$ = BinaryExpression::Operator::Less; }
-    | LESS_EQUAL   { $$ = BinaryExpression::Operator::LessEqual; }
-    | GREATER      { $$ = BinaryExpression::Operator::Greater; }
-    | GREATER_EQUAL { $$ = BinaryExpression::Operator::GreaterEqual; }
-    ;
-
-additive_expression:
-    multiplicative_expression
-        { $$ = $1; }
-    | additive_expression PLUS multiplicative_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::Add, $1, $3); }
-    | additive_expression MINUS multiplicative_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::Subtract, $1, $3); }
-    ;
-
-multiplicative_expression:
-    unary_expression
-        { $$ = $1; }
-    | multiplicative_expression STAR unary_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::Multiply, $1, $3); }
-    | multiplicative_expression SLASH unary_expression
-        { $$ = makeBinary(@$, BinaryExpression::Operator::Divide, $1, $3); }
-    ;
-
-unary_expression:
-    primary_expression
-        { $$ = $1; }
-    | PLUS unary_expression
-        {
-            $$ = new UnaryExpression(toLocation(@$), UnaryExpression::Operator::Positive,
-                                     std::unique_ptr<Expression>($2));
-        }
-    | MINUS unary_expression
-        {
-            $$ = new UnaryExpression(toLocation(@$), UnaryExpression::Operator::Negative,
-                                     std::unique_ptr<Expression>($2));
-        }
-    ;
-
-primary_expression:
-    column_reference
-        { $$ = $1; }
-    | INTEGER_LITERAL
-        { $$ = new LiteralExpression(toLocation(@$), $1); }
-    | DECIMAL_LITERAL
-        { $$ = new LiteralExpression(toLocation(@$), $1); }
-    | STRING_LITERAL
-        {
-            $$ = new LiteralExpression(toLocation(@$), std::move(*$1));
-            delete $1;
-        }
-    | TRUE
-        { $$ = new LiteralExpression(toLocation(@$), true); }
-    | FALSE
-        { $$ = new LiteralExpression(toLocation(@$), false); }
-    | function_call
-        { $$ = $1; }
-    | LEFT_PAREN expression RIGHT_PAREN
-        { $$ = $2; }
-    ;
-
-column_reference:
-    identifier
-        {
-            $$ = new ColumnReference(toLocation(@$), std::move(*$1));
-            delete $1;
-        }
-    | identifier DOT identifier
-        {
-            $$ = new ColumnReference(toLocation(@$), std::move(*$3), std::move(*$1));
-            delete $1;
-            delete $3;
-        }
-    ;
-
-function_call:
-    COUNT LEFT_PAREN STAR RIGHT_PAREN
-        { $$ = FunctionCall::countStar(toLocation(@$)).release(); }
-    | COUNT LEFT_PAREN expression RIGHT_PAREN
-        {
-            $$ = new FunctionCall(toLocation(@$), FunctionCall::Function::Count,
-                                  std::unique_ptr<Expression>($3));
-        }
-    | aggregate_function LEFT_PAREN expression RIGHT_PAREN
-        {
-            $$ = new FunctionCall(toLocation(@$), $1, std::unique_ptr<Expression>($3));
-        }
-    ;
-
-aggregate_function:
-    SUM { $$ = FunctionCall::Function::Sum; }
-    | AVG { $$ = FunctionCall::Function::Average; }
-    | MIN { $$ = FunctionCall::Function::Minimum; }
-    | MAX { $$ = FunctionCall::Function::Maximum; }
-    ;
+primary:
+    IDENTIFIER {
+        $$ = new optiq::IdentifierExpression(loc(@1), *$1);
+        delete $1;
+    }
+  | INTEGER_LITERAL { $$ = new optiq::LiteralExpression(loc(@1), $1); }
+  | FLOAT_LITERAL   { $$ = new optiq::LiteralExpression(loc(@1), $1); }
+  | TRUE            { $$ = new optiq::LiteralExpression(loc(@1), true); }
+  | FALSE           { $$ = new optiq::LiteralExpression(loc(@1), false); }
+  | LEFT_PAREN expression RIGHT_PAREN { $$ = $2; }
+;
 
 %%
