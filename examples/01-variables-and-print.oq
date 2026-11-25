@@ -1,6 +1,0 @@
-// Variables, arithmetic, and output
-let base = 50000;
-let bonus = 5000;
-let total = base + bonus * 2;
-print(total);
-print('computed');
