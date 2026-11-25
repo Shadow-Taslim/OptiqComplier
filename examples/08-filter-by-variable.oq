@@ -1,7 +1,0 @@
--- A program variable used inside a query predicate
-let threshold = 60000 + 10000;
-let well_paid = SELECT id, name
-    FROM employees
-    WHERE salary >= threshold
-    ORDER BY name ASC;
-print(well_paid);
