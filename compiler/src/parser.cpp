@@ -5,7 +5,7 @@
 #include "sql_parser.hpp"
 #include "token_stream.hpp"
 
-int yyparse(optiq::TokenStream& tokens, optiq::ParseResult& result);
+int yyparse(optiq::TokenStream& tokens, optiq::ProgramParseResult& result);
 
 namespace {
 
@@ -38,8 +38,17 @@ int parserToken(optiq::TokenKind kind) {
     case TokenKind::Average: return AVG;
     case TokenKind::Minimum: return MIN;
     case TokenKind::Maximum: return MAX;
+    case TokenKind::Let: return LET;
+    case TokenKind::If: return IF;
+    case TokenKind::Else: return ELSE;
+    case TokenKind::While: return WHILE;
+    case TokenKind::Print: return PRINT;
+    case TokenKind::True: return TRUE;
+    case TokenKind::False: return FALSE;
     case TokenKind::LeftParen: return LEFT_PAREN;
     case TokenKind::RightParen: return RIGHT_PAREN;
+    case TokenKind::LeftBrace: return LEFT_BRACE;
+    case TokenKind::RightBrace: return RIGHT_BRACE;
     case TokenKind::Comma: return COMMA;
     case TokenKind::Semicolon: return SEMICOLON;
     case TokenKind::Dot: return DOT;
@@ -85,7 +94,7 @@ int yylex(YYSTYPE* value, YYLTYPE* location, optiq::TokenStream& tokens) {
 }
 
 void yyerror(YYLTYPE* location, optiq::TokenStream& tokens,
-             optiq::ParseResult& result, const char* message) {
+             optiq::ProgramParseResult& result, const char* message) {
     (void)tokens;
     if (!result.error) {
         result.error = optiq::Diagnostic{
@@ -95,26 +104,50 @@ void yyerror(YYLTYPE* location, optiq::TokenStream& tokens,
 
 namespace optiq {
 
-ParseResult parseSql(const std::string& sql) {
-    LexResult lexed = tokenize(sql);
+ProgramParseResult parseProgram(const std::string& source) {
+    LexResult lexed = tokenize(source);
     if (lexed.error) {
-        ParseResult result;
+        ProgramParseResult result;
         result.error = std::move(lexed.error);
         return result;
     }
 
-    ParseResult result;
+    ProgramParseResult result;
     TokenStream tokens(lexed.tokens);
     const int status = yyparse(tokens, result);
     if (status != 0 && !result.error) {
-        result.error = Diagnostic{"Unable to parse SQL input", SourceLocation{}};
+        result.error = Diagnostic{"Unable to parse input", SourceLocation{}};
     }
-    if (status == 0 && !result.statement) {
-        result.statement.reset();
-        if (!result.error) {
-            result.error = Diagnostic{"Parser produced no SELECT statement", SourceLocation{}};
-        }
+    if (status == 0 && !result.program && !result.error) {
+        result.error = Diagnostic{"Parser produced no program", SourceLocation{}};
     }
+    return result;
+}
+
+ParseResult parseSql(const std::string& sql) {
+    // Query statements in a program end with ';'; keep the legacy
+    // semicolon-optional single-query behavior by appending one if needed.
+    std::string source = sql;
+    const auto last = source.find_last_not_of(" \t\r\n");
+    if (last == std::string::npos || source[last] != ';') {
+        source.push_back(';');
+    }
+
+    ProgramParseResult parsed = parseProgram(source);
+    ParseResult result;
+    if (parsed.error) {
+        result.error = std::move(parsed.error);
+        return result;
+    }
+
+    if (parsed.program->statements.size() != 1 ||
+        parsed.program->statements[0]->kind != Statement::Kind::Query) {
+        result.error = Diagnostic{"Expected a single SQL SELECT statement", SourceLocation{}};
+        return result;
+    }
+
+    auto& only = static_cast<QueryStatement&>(*parsed.program->statements[0]);
+    result.statement = std::move(only.query);
     return result;
 }
 
