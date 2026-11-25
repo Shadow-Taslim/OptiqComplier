@@ -1,3 +1,0 @@
--- A query expression bound to a table variable
-let seniors = SELECT name, salary FROM employees WHERE salary > 70000;
-print(seniors);
