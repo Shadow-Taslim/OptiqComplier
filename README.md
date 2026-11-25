@@ -1,21 +1,21 @@
-# SQL Mini-Compiler with Query Optimization
+# Optiq — Mini Programming Language Compiler with SQL
 
-An SQL mini-compiler and query optimization project using **Flex**, **Bison**, and **C++17**, with an **Express API** and **React frontend** planned for later milestones. The current compiler accepts the documented SQL subset, builds a strongly typed Abstract Syntax Tree (AST), and prints that AST as JSON.
+A **mini programming language compiler** built with **Flex**, **Bison**, and **C++17**, with an **Express API** and **React frontend** planned for later milestones. The Optiq language has variables, assignment, expressions, `if`/`else`, `while`, and `print` — with SQL `SELECT` queries as a first-class feature. The compiler parses full Optiq programs, builds a strongly typed Abstract Syntax Tree (AST), and prints that AST as JSON.
 
-> **Current status — Week 2:** lexical analysis, SQL parsing, typed AST generation, syntax diagnostics, the command-line interface, and automated frontend tests are implemented. Semantic analysis, relational planning, optimization, CSV execution, API handlers, and the React interface remain future work.
+> **Current status — Week 2 (extended):** lexical analysis, parsing for the full Optiq language (imperative statements + SQL subset), typed AST generation, syntax diagnostics, the command-line interface, and automated tests are implemented. Semantic analysis, interpretation, relational planning, optimization, CSV execution, API handlers, and the React interface remain future work.
 
 ## Project Scope
 
-The initial release targets the SQL behaviors captured by the 12 fixtures in [Supported Example SQL Queries](docs/example-queries.md): projection, filtering, constant arithmetic, boolean predicates, aliases, inner joins, aggregation, grouping, ordering, and limits. Invalid or unsupported syntax produces an error with a source line and column.
+The language is defined by the [Optiq Language Specification](docs/language-spec.md) with a worked walkthrough in [Worked Example](docs/worked-example.md) and ten runnable-as-syntax examples in [`examples/`](examples/). The embedded SQL behaviors are captured by the 12 fixtures in [Supported Example SQL Queries](docs/example-queries.md): projection, filtering, constant arithmetic, boolean predicates, aliases, inner joins, aggregation, grouping, ordering, and limits. Invalid or unsupported syntax produces an error with a source line and column.
 
 ### Implemented Compiler Frontend
 
-- **Flex lexer:** case-insensitive keywords, identifiers, qualified-name components, integer/decimal/string literals, operators, punctuation, whitespace, and line/block comments.
-- **Bison parser:** `SELECT`, `FROM`, aliases, `JOIN`/`INNER JOIN`, `ON`, `WHERE`, `NOT`, `AND`, `OR`, arithmetic and comparison expressions, `GROUP BY`, `ORDER BY ASC/DESC`, `LIMIT`, and the five documented aggregates.
-- **Typed AST:** dedicated C++17 nodes for statements, clauses, columns, literals, unary/binary expressions, and aggregate calls, with `std::unique_ptr` ownership.
+- **Flex lexer:** case-insensitive keywords (`LET`, `IF`, `ELSE`, `WHILE`, `PRINT`, `TRUE`, `FALSE`, and the SQL keywords), identifiers, qualified-name components, integer/decimal/string/boolean literals, operators, braces and punctuation, whitespace, and `--`, `//`, and `/* */` comments.
+- **Bison parser (conflict-free):** `let` declarations, assignment, `print`, `if`/`else if`/`else`, `while`, brace blocks, standalone query statements, and query expressions on the right-hand side of declarations and assignments; plus the full SQL subset (`SELECT`, `FROM`, aliases, `JOIN`/`INNER JOIN`, `ON`, `WHERE`, `NOT`, `AND`, `OR`, arithmetic and comparison expressions, `GROUP BY`, `ORDER BY ASC/DESC`, `LIMIT`, and the five documented aggregates).
+- **Typed AST:** dedicated C++17 nodes for programs, statements, clauses, columns, literals (including booleans), unary/binary expressions, aggregate calls, and query expressions, with `std::unique_ptr` ownership.
 - **AST printer:** deterministic JSON output for compiler inspection and tests.
-- **CLI:** SQL from command-line arguments or standard input, AST output on success, and source-located diagnostics on failure.
-- **Automated tests:** AST, token, grammar, precedence, invalid-input, CLI, and all 12 SQL fixture checks.
+- **CLI:** Optiq source from a `.oq` file, command-line arguments, or standard input; AST output on success, source-located diagnostics on failure; `--sql` mode for single-query compatibility.
+- **Automated tests:** AST, token, grammar, precedence, invalid-input, CLI, all 12 SQL fixture checks, and all 10 example programs.
 
 ### Planned Later Capabilities
 
@@ -33,10 +33,10 @@ The initial release targets the SQL behaviors captured by the 12 fixtures in [Su
 ### Working Week 2 frontend
 
 ```text
-SQL argument or stdin
+Optiq program (file, argument, or stdin)
       │
       ▼
-Flex lexer ──tokens + locations──> Bison parser ──> typed AST ──> JSON AST output
+Flex lexer ──tokens + locations──> Bison parser ──> Program AST ──> JSON AST output
                                       │
                                       └──> source-located syntax error
 ```
@@ -65,22 +65,25 @@ The future request/response contract, including errors, plans, results, and stat
 ├── compiler/
 │   ├── include/optiq/       # AST, AST printer, lexer, and parser interfaces
 │   ├── src/
-│   │   ├── lexer.l          # Flex token rules
-│   │   ├── parser.y         # Bison SQL grammar
+│   │   ├── lexer.l          # Flex token rules (language + SQL keywords)
+│   │   ├── parser.y         # Bison grammar for Optiq programs and SQL
 │   │   ├── cli.cpp          # optiq_cli entry point
 │   │   └── ...              # Scanner, parser, and AST implementation
 │   └── CMakeLists.txt       # C++17 targets, generated sources, and CTest
 ├── apps/
 │   ├── api/                 # Future Express service and compiler adapter
 │   └── web/                 # Future React + TypeScript + Vite client
+├── examples/                # Ten documented Optiq programs (.oq)
 ├── tests/
-│   ├── compiler/            # AST, lexer, parser, fixture, and CLI tests
+│   ├── compiler/            # AST, lexer, parser, program, fixture, and CLI tests
 │   ├── api/                 # Future API tests
 │   ├── frontend/            # Future frontend tests
 │   └── fixtures/            # Twelve unchanged documented SQL fixtures
 ├── docs/
 │   ├── architecture.md
 │   ├── api-contract.md
+│   ├── language-spec.md
+│   ├── worked-example.md
 │   ├── example-queries.md
 │   └── week2-verification.md
 ├── data/
@@ -145,23 +148,35 @@ The Week 2 implementation was built and tested with GNU C++ 12.2, Flex 2.6.4, Bi
 
 ## CLI Usage
 
-Pass SQL as an argument:
+Parse an Optiq program file (program mode is the default):
 
 ```powershell
-.\build\compiler\optiq_cli.exe "SELECT name, salary FROM employees WHERE salary >= 70000 ORDER BY salary DESC;"
+.\build\compiler\optiq_cli.exe .\examples\02-assignment-and-loop.oq
 ```
 
-Or provide SQL through standard input:
+Pass source as an argument:
 
 ```powershell
-Get-Content .\tests\fixtures\01-ordered-projection.sql -Raw | .\build\compiler\optiq_cli.exe
+.\build\compiler\optiq_cli.exe "let x = 40 + 2; print(x);"
 ```
 
-Valid SQL prints the AST as JSON to stdout. Invalid SQL prints a line/column diagnostic to stderr.
+Parse a single SQL query in compatibility mode:
+
+```powershell
+.\build\compiler\optiq_cli.exe --sql "SELECT name, salary FROM employees WHERE salary >= 70000 ORDER BY salary DESC;"
+```
+
+Or provide source through standard input:
+
+```powershell
+Get-Content .\examples\10-full-pipeline.oq -Raw | .\build\compiler\optiq_cli.exe
+```
+
+Valid input prints the AST as JSON to stdout (`Program` in program mode, `SelectStatement` in `--sql` mode). Invalid input prints a line/column diagnostic to stderr.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | SQL parsed successfully |
+| `0` | Input parsed successfully |
 | `2` | Lexical or syntax error |
 | `1` | Unexpected internal error |
 
@@ -177,7 +192,7 @@ cmake --build build/compiler --parallel
 ctest --test-dir build/compiler --output-on-failure
 ```
 
-The verified Week 2 suite contains **8 CTest tests**, including all **12 SQL fixtures**, and completes with no failures. See [Week 2 Verification](docs/week2-verification.md) for the exact build scope and limitations.
+The verified Week 2 suite contains **12 CTest tests**, including all **12 SQL fixtures** and all **10 Optiq example programs**, and completes with no failures. See [Week 2 Verification](docs/week2-verification.md) for the exact build scope and limitations.
 
 ## Optimization Example
 
@@ -212,15 +227,16 @@ Projection [e.name, d.dept_name]
 - Two table schemas and small CSV datasets.
 - Twelve supported SQL examples with expected results.
 - Setup and implementation-scope documentation.
+- **Extended scope:** the [Optiq Language Specification](docs/language-spec.md) defining the mini programming language (EBNF grammar, types, statements, query expressions), ten example programs in [`examples/`](examples/), and a [worked example](docs/worked-example.md) tracing source → tokens → AST → execution → output.
 
 ## Week 2 Deliverables
 
-- Working Flex lexer and conflict-free Bison parser.
-- Strongly typed C++17 AST and JSON AST printer.
-- Command-line compiler with argument/stdin modes and source-located errors.
+- Working Flex lexer and conflict-free Bison parser for the **full Optiq language**: `let`, assignment, `print`, `if`/`else if`/`else`, `while`, blocks, boolean literals, query statements, and query expressions — plus the unchanged SQL subset.
+- Strongly typed C++17 AST (`Program`, `Statement` hierarchy, `QueryExpression`) and JSON AST printer.
+- Command-line compiler with file/argument/stdin modes, program and `--sql` compatibility modes, and source-located errors.
 - CMake-generated scanner/parser sources and automated CTest suite.
-- Twelve reusable SQL acceptance fixtures.
-- Updated architecture, setup, CLI, and verification documentation.
+- Twelve reusable SQL acceptance fixtures and ten Optiq example programs, all covered by tests.
+- Updated architecture, language specification, API contract, setup, CLI, and verification documentation.
 
 ## License
 
