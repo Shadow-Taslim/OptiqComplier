@@ -1,161 +1,85 @@
 # Architecture and Implementation Plan
 
-## Status
+Optiq is a compiler front-end with intermediate code generation for the
+course-specified language (see [language-spec.md](language-spec.md)). It is a
+single C++17 pipeline: source code in, Three Address Code out.
 
-Week 1 established the repository layout, interface contract, sample catalog, and acceptance expectations, and was then extended with the [Optiq Language Specification](language-spec.md): Optiq is a **mini programming language** with first-class SQL queries. Week 2 implements the compiler frontend: Flex lexical analysis, Bison parsing for both the imperative language (variables, assignment, `if`/`else`, `while`, `print`) and the SQL subset, a strongly typed C++17 AST, JSON AST printing, source-located diagnostics, the `optiq_cli` executable, and automated tests.
-
-Semantic checks, relational planning, optimization, CSV execution, interpretation, Express handlers, and the React interface remain intentionally unimplemented.
-
-## Components
-
-1. **AST and printer (`compiler/include/optiq/`, `compiler/src/ast_printer.cpp`)** — Typed program, statement, clause, and expression nodes with explicit ownership and deterministic JSON traversal. The `Statement` hierarchy covers `let`, assignment, `print`, `if`/`else`, `while`, and query statements; a `Program` owns the top-level statement list.
-2. **Lexer (`compiler/src/lexer.l`)** — Reentrant Flex scanner that produces a standalone token stream. `ScannerState` owns tokenization results and tracks line, column, and byte-offset positions.
-3. **Parser (`compiler/src/parser.y`)** — Pure Bison parser that consumes the token stream and constructs the AST. Lexer and parser errors use the same `Diagnostic` shape.
-4. **CLI (`compiler/src/cli.cpp`)** — Accepts an Optiq program from a `.oq` file, arguments, or stdin (plus a `--sql` single-query mode), writes AST JSON to stdout on success, and writes diagnostics to stderr on failure.
-5. **Express API (`apps/api/`)** — Planned request validation, compiler process management, timeouts, and safe error propagation.
-6. **React frontend (`apps/web/`)** — Planned SQL input, compile/execute actions, plan/result views, errors, and statistics.
-7. **Sample catalog (`data/`)** — Versioned table metadata and small CSV datasets for later semantic and execution milestones.
-8. **Tests (`tests/`)** — AST, lexer, parser, CLI, and 12-fixture acceptance tests; API, optimizer, executor, and frontend tests will accompany those implementations.
-
-## Compiler Frontend Flow
+## Pipeline
 
 ```text
-Optiq source (program or single SQL query)
-   │
-   ▼
-Flex scanner + ScannerState
-   │ vector<Token>
-   │ each token: kind, original lexeme, typed value, source location
-   ▼
-TokenStream
-   │ yylex adapter maps TokenKind to Bison tokens
-   ▼
-Bison LALR parser
-   │ unique_ptr<Statement> / unique_ptr<Expression> and typed clause values
-   ▼
-Program AST (statements; query statements wrap a SelectStatement)
-   │
-   ├── success ──> AstPrinter ──> JSON stdout
-   └── failure ──> Diagnostic ──> line/column stderr
+Source code (.mc / .txt)
+        │
+        ▼
+Lexical Analyzer (Flex)          compiler/src/lexer.l, lexer.cpp, scanner_state.cpp
+        │  token stream with line/column locations
+        ▼
+Syntax Analyzer (Bison)          compiler/src/parser.y, parser.cpp
+        │  Abstract Syntax Tree (AST)
+        ▼
+Semantic Analyzer                compiler/src/semantic.cpp
+(Symbol Table + Type Checking)   compiler/src/symbol_table.cpp
+        │  annotated / validated AST
+        ▼
+Intermediate Code Generation     compiler/src/tac.cpp
+        │
+        ▼
+Three Address Code (TAC) output
 ```
 
-The lexer is deliberately independent of generated Bison headers. The parser adapts its token stream in `parser.cpp`, preserving clear lexer/parser separation and allowing lexical tests to run without invoking the grammar.
+## Module Responsibilities
 
-## Optiq Language Grammar Boundary
+| Module | Files | Responsibility |
+| ------ | ----- | -------------- |
+| Lexer | `src/lexer.l`, `src/lexer.cpp`, `src/scanner_state.*` | Character stream → token stream; discards comments/whitespace; reports invalid tokens with line and column. |
+| Parser | `src/parser.y`, `src/parser.cpp`, `src/token_stream.hpp` | Verifies the CFG; builds the AST; reports syntax errors with locations and recovers at statement boundaries (`error SEMICOLON`) so one error does not hide the rest. |
+| AST | `include/optiq/ast.hpp`, `src/ast_printer.cpp` | Typed node hierarchy (`Declaration`, `Assignment`, `If`, `While`, `Print`, `Block`; identifier/literal/binary/unary expressions) with `std::unique_ptr` ownership; indented-text and JSON printers. |
+| Symbol table | `include/optiq/symbol_table.hpp`, `src/symbol_table.cpp` | Scope stack; each entry records name, type, scope id, and declaration line. |
+| Semantic analyzer | `include/optiq/semantic.hpp`, `src/semantic.cpp` | AST walk enforcing declaration-before-use, redeclaration, scope visibility, and the full type system. |
+| TAC generator | `include/optiq/tac.hpp`, `src/tac.cpp` | AST walk emitting temporaries, labels, conditional/unconditional jumps, and `print` instructions. |
+| CLI | `src/cli.cpp` | `--tokens`, `--ast`, `--json`, `--check`, or default TAC output; file, argument, or stdin input; exit codes 0/2/3 for success, syntax, and semantic failure. |
 
-The extended Week 2 frontend accepts full Optiq programs as defined by the EBNF in [language-spec.md](language-spec.md):
+## Design Decisions
 
-- `LET` declarations, reassignment, and `PRINT` output, each terminated by `;`.
-- `IF` / `ELSE IF` / `ELSE` conditionals and `WHILE` loops with brace-delimited blocks; blocks nest arbitrarily.
-- Boolean literals `TRUE`/`FALSE` and the same expression precedence ladder used by SQL.
-- A standalone `SELECT ... ;` query statement, and query expressions such as `let rows = SELECT ...;`.
-- `//`, `--`, and `/* ... */` comments.
+- **Tokenize fully before parsing.** The lexer produces a complete token
+  vector; a `TokenStream` feeds Bison one token at a time. This keeps the
+  reentrant Flex scanner independent of the parser and makes both sides easy
+  to unit-test.
+- **Pure, location-aware Bison parser** (`api.pure full`, `%locations`,
+  `parse.error verbose`) so diagnostics carry line/column information.
+- **Statement-level error recovery** via `statement: error SEMICOLON` with
+  `yyerrok`, so a single syntax error does not halt compilation and every
+  recoverable error is reported in one run.
+- **Semantic analysis is a separate pass**, not embedded parser actions — the
+  AST is the single interface between phases, exactly as the manual's pipeline
+  requires.
+- **Blocks are the only scope boundaries**, so nested-scope handling in the
+  symbol table is a simple push/pop around `visitBlock`.
+- **Keywords are case-sensitive** (C-family convention), matched by a keyword
+  table after the generic identifier pattern is recognized by Flex.
 
-Every SQL query from the previous SQL-only frontend remains a valid Optiq program: it parses as a one-statement `Program`. `parseSql` is retained as a compatibility entry point that accepts exactly one query and rejects anything else.
+## Error Model
 
-## SQL Grammar Boundary
+| Exit code | Meaning |
+| --------- | ------- |
+| `0` | Compiled successfully (TAC emitted) |
+| `2` | Lexical or syntax error |
+| `3` | Semantic error |
+| `1` | Internal compiler error |
 
-The implemented frontend accepts the 12 documented fixtures and the following Week 2 grammar:
+## Testing Layers
 
-- One `SELECT` statement; as a query statement inside a program it ends with `;`.
-- Wildcard and expression select lists.
-- One base table with an optional alias, with or without `AS`.
-- Zero or one `JOIN`/`INNER JOIN` with an `ON` expression.
-- Optional `WHERE`, `GROUP BY`, `ORDER BY`, and `LIMIT` clauses in SQL order.
-- Qualified and unqualified column references.
-- Integer, decimal, and single-quoted string literals; doubled single quotes escape a quote.
-- `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`, including `COUNT(*)`.
-- Comparison, arithmetic, boolean, unary-sign, and parenthesized expressions.
+1. **Unit tests** per module: `lexer_tests`, `parser_tests`, `ast_tests`,
+   `semantic_tests`, `tac_tests` (CTest).
+2. **Golden-file tests**: every program in `tests/programs/` is compiled and
+   compared byte-for-byte with `tests/expected/<name>.out`
+   (`example_tests`), covering valid compilation, lexical errors, syntax
+   errors, and every semantic rule.
+3. **CLI tests**: argument, file, stdin, and help modes, plus invalid-input
+   exit codes.
 
-No other statement types are accepted. Syntax outside this boundary produces a lexical or syntax error rather than being silently ignored.
+## Build
 
-## Operator Precedence
-
-The grammar uses separate nonterminal levels instead of conflict-suppression declarations. From lowest to highest precedence:
-
-1. `OR`
-2. `AND`
-3. Prefix `NOT`
-4. Comparisons: `=`, `==`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
-5. Addition and subtraction
-6. Multiplication and division
-7. Unary `+` and `-`
-8. Columns, literals, aggregate calls, and parenthesized expressions
-
-Arithmetic, boolean, and comparison levels are left associative where repeated operators are permitted. The grammar builds with Bison warnings enabled and no shift/reduce or reduce/reduce conflicts.
-
-## AST Ownership and Traversal
-
-`Expression` is the abstract base for `ColumnReference`, `LiteralExpression`, `BinaryExpression`, `UnaryExpression`, `FunctionCall`, and `QueryExpression`; `Statement` is the abstract base for the six statement nodes, and a `Program` owns the top-level statements. Statement and clause structures use value semantics where practical and `std::unique_ptr` for owned children. Bison semantic values use raw pointers only during reduction; each successful reduction transfers ownership into AST nodes, and `%destructor` rules release discarded semantic values on parser failure.
-
-`AstPrinter` traverses nodes through their typed `Expression::Kind` and `Statement::Kind`, producing deterministic JSON without adding a third-party JSON dependency. AST JSON is a Week 2 diagnostic representation and is distinct from the future compile/execute API envelope.
-
-## Source Locations and Diagnostics
-
-Flex updates line, column, and offset positions for every matched token, including whitespace and comments. Lexical failures identify invalid characters, malformed or out-of-range numbers, unterminated strings, and unterminated block comments. Bison verbose syntax errors are annotated with the unexpected token's line and column. The CLI returns `2` for these user-input errors and reserves `1` for unexpected internal failures.
-
-## Build Organization
-
-CMake builds three libraries and one executable:
-
-- `optiq_ast` — AST printing and traversal.
-- `optiq_lexer` — Flex scanner and tokenization API.
-- `optiq_parser` — Bison grammar and token-stream adapter.
-- `optiq_cli` — command-line entry point.
-
-`FLEX_TARGET` and `BISON_TARGET` generate `sql_lexer.cpp`, `sql_parser.cpp`, and `sql_parser.hpp` under the build directory. Generated files are not committed. `OPTIQ_BUILD_TESTS=ON` enables the CTest suite.
-
-## Future Application Request Flow
-
-```text
-React SQL editor
-    │ HTTP POST /api/compile or /api/execute
-    ▼
-Express validation and process adapter
-    │ one versioned JSON document on stdin
-    ▼
-C++ compiler process
-    ├── lex / parse / semantic analysis
-    ├── initial relational plan
-    ├── optimized relational plan
-    └── execute against sample-v1 CSV data (execute only)
-    │ one JSON response on stdout; diagnostics on stderr
-    ▼
-Express response
-    │
-    ▼
-React plans, errors, results, and statistics views
-```
-
-The browser will never start the compiler directly. Express will not pass arbitrary filesystem paths from the browser; the catalog identifier will be allow-listed. Message shapes and failure rules remain defined in [api-contract.md](api-contract.md).
-
-## Test Layers
-
-- `ast_tests` — typed AST construction, ownership-facing behavior, traversal, aliases, wildcards, and JSON escaping.
-- `lexer_tests` — keywords, token categories, literals, comments, source locations, and lexical failures.
-- `parser_tests` — grammar coverage, precedence, AST structure, empty/missing clauses, invalid characters, and diagnostics.
-- `fixture_tests` — all 12 documented SQL fixtures and their expected AST structures.
-- `program_tests` — statement grammar, query expressions, program-level precedence, and invalid-program diagnostics.
-- `program_fixture_tests` — all 10 documented Optiq example programs and their expected statement structures.
-- `cli_valid`, `cli_program`, `cli_invalid`, `cli_invalid_program`, `cli_help`, and `cli_stdin` — output, exit behavior, help, argument, program, and standard-input modes.
-
-Fixture parsing does not execute the query or compare result rows. Execution tests will be added only with the CSV executor.
-
-## Later Implementation Order
-
-1. Add catalog loading, semantic checks, and semantic-error tests (name resolution for variables vs columns).
-2. Add the tree-walking interpreter for statements (`let`, assignment, `print`, `if`, `while`).
-3. Add relational planning and the three optimization passes.
-4. Add CSV execution and verify all documented query results.
-5. Adapt the CLI/process boundary to the versioned API contract.
-6. Add the Express adapter and API integration tests.
-7. Add the React workflow and end-to-end tests.
-
-## Explicit Non-Goals for Week 2
-
-- No program interpretation or execution — statements parse into an AST but produce no runtime behavior yet.
-- No semantic validation, relational plans, optimization, or CSV execution.
-- No Express routes, React pages, or UI components.
-- No database, authentication, deployment, or persistence beyond the sample CSV files.
-- No generated Flex/Bison sources committed to the repository.
-- No claim that documented SQL queries produce executed results yet.
+CMake generates the Flex/Bison sources into the build directory (generated
+files are never committed). A root `Makefile` wraps the CMake invocations for
+convenience. The verified toolchain is GCC 12.2, Flex 2.6.4, Bison 3.8.2 on
+Linux; on Windows use win_flex/win_bison with the MinGW Makefiles generator.

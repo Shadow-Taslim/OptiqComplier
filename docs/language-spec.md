@@ -1,244 +1,202 @@
-# Optiq Language Specification
+# Language Specification
 
-**Language version:** `0.2`
-**Status:** Week 1 definition; Week 2 implements the lexer, parser, and AST for this specification.
+This document formally specifies the language implemented by Optiq, exactly as
+defined in **Section 5 of the Compiler Construction Lab Project Manual**
+(Metropolitan University, CSE). The manual is the authoritative specification;
+this document restates it precisely and records the formal context-free grammar
+and the semantic rules enforced by the compiler.
 
-Optiq is a mini programming language compiled with **Flex** and **Bison**. SQL `SELECT` queries are a first-class part of the language: a query can appear as a statement or as an expression whose value is a table. This document is the single source of truth for the Week 2 grammar.
+Source files use the `.mc` extension (plain `.txt` also works).
 
-## 1. Design Goals
+## 1. Lexical Structure
 
-- Demonstrate a complete compiler frontend: lexical analysis (Flex), syntax analysis (Bison), typed AST construction, and source-located diagnostics.
-- Provide the classic programming-language features: variables, assignment, expressions, conditionals, loops, and output.
-- Integrate the existing SQL subset so programs can query the `sample-v1` CSV catalog without leaving the language.
+### 1.1 Keywords
 
-## 2. Lexical Structure
-
-### 2.1 Comments
-
-| Form | Kind |
-| --- | --- |
-| `-- text` | SQL-style line comment |
-| `// text` | C-style line comment |
-| `/* text */` | Block comment, may span lines; unterminated blocks are an error |
-
-### 2.2 Identifiers and Keywords
-
-- Identifiers match `[A-Za-z_][A-Za-z0-9_]*`.
-- Keywords are **case-insensitive** (`let`, `LET`, and `Let` are identical).
-- Language keywords: `LET`, `IF`, `ELSE`, `WHILE`, `PRINT`, `TRUE`, `FALSE`.
-- SQL keywords: `SELECT`, `FROM`, `AS`, `INNER`, `JOIN`, `ON`, `WHERE`, `GROUP`, `BY`, `ORDER`, `ASC`, `DESC`, `LIMIT`, `AND`, `OR`, `NOT`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`.
-- A keyword is never an identifier.
-
-### 2.3 Literals
-
-| Literal | Examples | Notes |
-| --- | --- | --- |
-| Integer | `42`, `70000` | Signed 64-bit range; out-of-range is a lexical error. |
-| Decimal | `3.14`, `0.5` | Stored as double precision. |
-| String | `'Aisha''s'` | Single-quoted; a doubled single quote escapes a quote. Unterminated strings are an error. |
-| Boolean | `true`, `false` | The keywords `TRUE` and `FALSE`. |
-
-### 2.4 Operators and Punctuation
-
-`(` `)` `{` `}` `,` `;` `.` `=` `==` `!=` `<>` `<` `<=` `>` `>=` `+` `-` `*` `/`
-
-A number directly followed by letters (for example `12abc`) is a lexical error, not two tokens.
-
-## 3. Types
-
-| Type | Produced by | Notes |
-| --- | --- | --- |
-| `integer` | Integer literals, arithmetic on integers | 64-bit signed. |
-| `decimal` | Decimal literals, division, mixed arithmetic | Double precision. |
-| `string` | String literals | Concatenation is not part of Week 2. |
-| `boolean` | `TRUE`, `FALSE`, comparisons, `AND`/`OR`/`NOT` | Conditions require a boolean. |
-| `table` | Query expressions | A collection of named columns and rows, executed against CSV data in Week 3. |
-
-Static type checking belongs to the semantic-analysis milestone; Week 2 checks syntax only.
-
-## 4. Statements
-
-A program is a sequence of statements. Every simple statement ends with `;`. Compound statements use brace blocks and take no trailing semicolon.
-
-### 4.1 Variable declaration
-
-```text
-let threshold = 5000;
+```
+int  float  bool  if  else  while  print  true  false
 ```
 
-Declares a variable in the current block and initializes it. Redeclaring a name in the same block is a semantic error (Week 3).
+Keywords are lowercase and case-sensitive (`Int` is an identifier, not a
+keyword), matching C-family convention.
 
-### 4.2 Assignment
+### 1.2 Identifiers
 
-```text
-threshold = threshold + 1000;
+```
+identifier ::= (letter | "_") (letter | digit | "_")*
 ```
 
-Assigns to an existing variable. Assignment is a statement, never an expression, so `=` inside an expression is always a comparison.
+### 1.3 Literals
 
-### 4.3 Output
+- Integer literals: `42`, `0`, `1000`
+- Floating-point literals: `3.14`, `0.5`
+- Boolean literals: `true`, `false`
 
-```text
-print(threshold);
-print('done');
+### 1.4 Operators
+
+| Category   | Operators                          |
+| ---------- | ---------------------------------- |
+| Arithmetic | `+` `-` `*` `/` `%`                |
+| Relational | `<` `>` `<=` `>=` `==` `!=`        |
+| Logical    | `&&` `||` `!`                      |
+
+`=` is the assignment operator.
+
+### 1.5 Delimiters
+
+`{` `}` `(` `)` `;` — semicolons terminate declarations, assignments, and
+print statements.
+
+### 1.6 Comments and Whitespace
+
+- Single-line comments start with `//` and run to end of line.
+- Block comments are enclosed in `/*` ... `*/` and do not nest.
+- Comments and whitespace (spaces, tabs, newlines) are discarded, never
+  tokenized.
+- Any character sequence that matches no valid token is reported as a lexical
+  error with its line number.
+
+## 2. Formal Context-Free Grammar
+
+Terminals are shown in **bold** or quoted; the start symbol is `program`.
+
+```
+program          → statement_list
+
+statement_list   → statement_list statement
+                 | ε
+
+statement        → declaration
+                 | assignment
+                 | if_statement
+                 | while_statement
+                 | print_statement
+                 | block
+
+declaration      → type IDENTIFIER ";"
+                 | type IDENTIFIER "=" expression ";"
+
+type             → "int" | "float" | "bool"
+
+assignment       → IDENTIFIER "=" expression ";"
+
+if_statement     → "if" "(" expression ")" block
+                 | "if" "(" expression ")" block "else" block
+
+while_statement  → "while" "(" expression ")" block
+
+print_statement  → "print" expression ";"
+
+block            → "{" statement_list "}"
+
+expression       → logic_or
+logic_or         → logic_or "||" logic_and | logic_and
+logic_and        → logic_and "&&" equality | equality
+equality         → equality "==" relational
+                 | equality "!=" relational
+                 | relational
+relational       → relational "<" additive
+                 | relational ">" additive
+                 | relational "<=" additive
+                 | relational ">=" additive
+                 | additive
+additive         → additive "+" multiplicative
+                 | additive "-" multiplicative
+                 | multiplicative
+multiplicative   → multiplicative "*" unary
+                 | multiplicative "/" unary
+                 | multiplicative "%" unary
+                 | unary
+unary            → "-" unary | "!" unary | primary
+primary          → IDENTIFIER
+                 | INTEGER_LITERAL
+                 | FLOAT_LITERAL
+                 | "true"
+                 | "false"
+                 | "(" expression ")"
 ```
 
-Evaluates the expression and writes its value to program output.
+### 2.1 Precedence and Associativity
 
-### 4.4 Conditional
+From loosest to tightest binding; all binary operators are left-associative:
 
-```text
-if (count > 3) {
-    print('large');
-} else if (count > 0) {
-    print('small');
-} else {
-    print('empty');
-}
+1. `||`
+2. `&&`
+3. `==` `!=`
+4. `<` `>` `<=` `>=`
+5. `+` `-`
+6. `*` `/` `%`
+7. unary `-` `!` (right-associative)
+8. parentheses, literals, identifiers
+
+There is no dangling-else ambiguity: both branches of `if` are mandatory
+blocks, so the grammar is unambiguous and LALR(1) conflict-free.
+
+## 3. Semantic Rules
+
+The grammar above is context-free; the following rules are enforced by the
+semantic analyzer (symbol table + type checking), with line-numbered errors:
+
+| # | Rule | Example of violation |
+| - | ---- | -------------------- |
+| 1 | A variable must be declared before use. | `x = 5;` with no `int x;` |
+| 2 | A variable may not be redeclared in the same scope. | `int x; int x;` |
+| 3 | A variable declared inside a block is not visible outside it. | `if (true) { int y; } y = 2;` |
+| 4 | A declaration initializer must match the declared type. | `bool b = 5 + 3.2;` |
+| 5 | An assignment value must match the variable's type. | `int x; x = true;` |
+| 6 | `&&`, `\|\|`, `!` require `bool` operands. | `bool b = 1 && 2;` |
+
+### 3.1 Type System
+
+- `int`, `float`, `bool` are distinct types.
+- Arithmetic `+ - * /` requires numeric (`int`/`float`) operands; the result is
+  `float` if either operand is `float`, otherwise `int`.
+- `%` requires both operands to be `int` and produces `int`.
+- Relational operators require numeric operands and produce `bool`.
+- `==`/`!=` require matching operand types (numeric-with-numeric or
+  `bool`-with-`bool`) and produce `bool`.
+- Logical operators require `bool` operands and produce `bool`.
+- Unary `-` requires a numeric operand; unary `!` requires a `bool` operand.
+- `if`/`while` conditions must be `bool`.
+- The only implicit conversion is the widening `int` → `float`, allowed in
+  initializers, assignments, and mixed arithmetic. Everything else must match
+  exactly.
+
+### 3.2 Scoping
+
+Every block `{ ... }` introduces a new scope. Lookup proceeds from the
+innermost scope outward, so an inner declaration shadows an outer one; when the
+block ends, its declarations cease to exist.
+
+## 4. Three Address Code (Target of Compilation)
+
+The compiler's final output is TAC with these conventions:
+
+- Temporaries `t1, t2, ...` hold intermediate expression values.
+- Labels `L1, L2, ...` mark jump targets (`L1:` on its own line).
+- Conditional jumps: `ifFalse <cond> goto <label>`.
+- Unconditional jumps: `goto <label>`.
+- Output: `print <operand>`.
+- `while` loops compile to a start label, a conditional exit, the body, and a
+  backward jump; `if-else` compiles to a conditional jump to the else block
+  and an unconditional jump over it.
+
+Example — for the source
+
+```
+int a;
+int b;
+int c;
+a = 5;
+b = 10;
+c = a + b * 2;
 ```
 
-`else if` chains and a final `else` block are supported. The condition must be a boolean.
+the compiler emits
 
-### 4.5 Loop
-
-```text
-while (threshold < 10000) {
-    threshold = threshold + 1000;
-}
 ```
-
-Evaluates the body while the boolean condition holds.
-
-### 4.6 Query statement
-
-```text
-SELECT name, salary FROM employees ORDER BY salary DESC;
+a = 5
+b = 10
+t1 = b * 2
+t2 = a + t1
+c = t2
 ```
-
-A standalone query executes and its resulting table becomes program output (Week 3 semantics).
-
-## 5. Expressions
-
-From lowest to highest precedence, all binary levels left-associative:
-
-1. `OR`
-2. `AND`
-3. Prefix `NOT`
-4. Comparisons: `=`, `==`, `!=`, `<>`, `<`, `<=`, `>`, `>=` (non-associative)
-5. Addition and subtraction: `+`, `-`
-6. Multiplication and division: `*`, `/`
-7. Unary `+` and `-`
-8. Literals, name references, function calls, query expressions, and parenthesized expressions
-
-### 5.1 Name references
-
-A bare identifier (`salary`, `threshold`) or a qualified name (`e.salary`). Whether a name denotes a program variable or a query column is decided by semantic analysis: inside a query expression, unqualified names resolve to columns of the queried tables first and to program variables second.
-
-### 5.2 Function calls
-
-`COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` take one expression argument; `COUNT(*)` counts rows. Inside a query they are SQL aggregates; applied to a table variable they compute over its rows.
-
-### 5.3 Query expressions
-
-```text
-let seniors = SELECT name FROM employees WHERE salary > threshold;
-```
-
-A `SELECT` query can be used as a **query expression** whose value is a `table`. To keep the grammar unambiguous (LALR conflict-free), a query expression may appear in exactly two positions:
-
-- as the entire right-hand side of a `LET` declaration or assignment, and
-- as a standalone query statement.
-
-Deeper nesting (for example `print(SELECT ...)`) is rejected as a syntax error; bind the query to a variable first and pass the variable instead. The SQL subset itself is unchanged from the Week 2 SQL frontend: one base table with optional alias, zero or one `JOIN`/`INNER JOIN ... ON`, and optional `WHERE`, `GROUP BY`, `ORDER BY`, `LIMIT` clauses.
-
-## 6. Grammar (EBNF)
-
-```ebnf
-program            = statement_list ;
-
-statement_list     = { statement } ;
-
-statement          = let_statement
-                   | assign_statement
-                   | print_statement
-                   | if_statement
-                   | while_statement
-                   | query_statement ;
-
-let_statement      = "LET" identifier "=" ( expression | select_statement ) ";" ;
-assign_statement   = identifier "=" ( expression | select_statement ) ";" ;
-print_statement    = "PRINT" "(" expression ")" ";" ;
-
-if_statement       = "IF" "(" expression ")" block [ else_part ] ;
-else_part          = "ELSE" block
-                   | "ELSE" if_statement ;
-
-while_statement    = "WHILE" "(" expression ")" block ;
-block              = "{" statement_list "}" ;
-
-query_statement    = select_statement ";" ;  (* the semicolon is required in programs *)
-
-expression         = or_expression ;
-or_expression      = and_expression { "OR" and_expression } ;
-and_expression     = not_expression { "AND" not_expression } ;
-not_expression     = [ "NOT" ] predicate ;
-predicate          = additive_expression [ comparison_operator additive_expression ] ;
-comparison_operator = "=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=" ;
-additive_expression       = multiplicative_expression { ("+" | "-") multiplicative_expression } ;
-multiplicative_expression = unary_expression { ("*" | "/") unary_expression } ;
-unary_expression   = [ "+" | "-" ] unary_expression | primary_expression ;
-primary_expression = identifier [ "." identifier ]
-                   | integer_literal
-                   | decimal_literal
-                   | string_literal
-                   | "TRUE"
-                   | "FALSE"
-                   | function_call
-                   | "(" expression ")" ;
-
-function_call      = "COUNT" "(" "*" ")"
-                   | aggregate_function "(" expression ")" ;
-aggregate_function = "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" ;
-
-select_statement   = "SELECT" select_list "FROM" table_reference
-                     [ join_clause ] [ where_clause ] [ group_by_clause ]
-                     [ order_by_clause ] [ limit_clause ] ;
-select_list        = select_item { "," select_item } ;
-select_item        = "*" | expression [ [ "AS" ] identifier ] ;
-table_reference    = identifier [ [ "AS" ] identifier ] ;
-join_clause        = [ "INNER" ] "JOIN" table_reference "ON" expression ;
-where_clause       = "WHERE" expression ;
-group_by_clause    = "GROUP" "BY" identifier_or_qualified { "," identifier_or_qualified } ;
-order_by_clause    = "ORDER" "BY" order_item { "," order_item } ;
-order_item         = identifier_or_qualified [ "ASC" | "DESC" ] ;
-limit_clause       = "LIMIT" integer_literal ;
-identifier_or_qualified = identifier [ "." identifier ] ;
-```
-
-## 7. Error Handling
-
-- Lexical errors: invalid characters, malformed or out-of-range numbers, unterminated strings, unterminated block comments.
-- Syntax errors: verbose Bison messages with the line and column of the unexpected token.
-- The CLI reports `error at line L, column C: message` on stderr and exits with code `2`.
-
-## 8. Example Program
-
-```text
-// Raise the threshold until only senior salaries remain
-let threshold = 50000;
-while (threshold < 100000) {
-    threshold = threshold + 10000;
-}
-
-let seniors = SELECT name, salary FROM employees WHERE salary >= threshold;
-print(threshold);
-print(seniors);
-```
-
-Printing a `table` value writes its rows; binding query results to variables is Week 3 semantics, but the syntax above is final.
-
-## 9. Explicit Non-Goals for Week 2
-
-- No execution, type checking, or name resolution — syntax and AST only.
-- No `for` loops, functions, arrays, or string concatenation.
-- No SQL features beyond the documented subset (no subqueries, `INSERT`, `UPDATE`, or multiple joins).
