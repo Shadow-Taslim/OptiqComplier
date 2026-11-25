@@ -77,15 +77,39 @@ if(OPTIQ_BUILD_TESTS)
         COMMAND optiq_fixture_tests "${PROJECT_SOURCE_DIR}/.."
     )
 
+    add_executable(optiq_program_tests
+        ../tests/compiler/program_tests.cpp
+    )
+    target_link_libraries(optiq_program_tests PRIVATE optiq_parser)
+    add_test(NAME program_tests COMMAND optiq_program_tests)
+
+    add_executable(optiq_program_fixture_tests
+        ../tests/compiler/program_fixture_tests.cpp
+    )
+    target_link_libraries(optiq_program_fixture_tests PRIVATE optiq_parser)
+    add_test(NAME program_fixture_tests
+        COMMAND optiq_program_fixture_tests "${PROJECT_SOURCE_DIR}/.."
+    )
+
     add_test(NAME cli_valid
-        COMMAND optiq_cli "SELECT name FROM employees WHERE id = 1;"
+        COMMAND optiq_cli --sql "SELECT name FROM employees WHERE id = 1;"
     )
     set_tests_properties(cli_valid PROPERTIES
         PASS_REGULAR_EXPRESSION "\"type\": \"SelectStatement\""
     )
 
+    add_test(NAME cli_program
+        COMMAND optiq_cli "let x = 40 + 2; print(x);"
+    )
+    set_tests_properties(cli_program PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"type\": \"Program\""
+    )
+
     add_test(NAME cli_invalid COMMAND optiq_cli "SELECT FROM employees")
     set_tests_properties(cli_invalid PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cli_invalid_program COMMAND optiq_cli "if (true) { print(1);")
+    set_tests_properties(cli_invalid_program PROPERTIES WILL_FAIL TRUE)
 
     add_test(NAME cli_help COMMAND optiq_cli --help)
     set_tests_properties(cli_help PROPERTIES PASS_REGULAR_EXPRESSION "Usage: optiq_cli")

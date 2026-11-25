@@ -50,6 +50,21 @@ int main() {
     expectKinds("SELECT 42 3.14 'text' FROM t",
                 {TokenKind::Select, TokenKind::IntegerLiteral, TokenKind::DecimalLiteral,
                  TokenKind::StringLiteral, TokenKind::From, TokenKind::Identifier, end});
+    expectKinds("let Let IF Else WHILE print TRUE false",
+                {TokenKind::Let, TokenKind::Let, TokenKind::If, TokenKind::Else,
+                 TokenKind::While, TokenKind::Print, TokenKind::True, TokenKind::False,
+                 end});
+    expectKinds("{ x } ;",
+                {TokenKind::LeftBrace, TokenKind::Identifier, TokenKind::RightBrace,
+                 TokenKind::Semicolon, end});
+
+    const auto lineComment = optiq::tokenize("// note\nlet x = 1;");
+    require(lineComment.success(), "line comments tokenize");
+    require(lineComment.tokens.size() == 6 &&
+                lineComment.tokens[0].kind == TokenKind::Let,
+            "// comments are ignored");
+    require(lineComment.tokens[0].location.line == 2,
+            "line tracking survives // comments");
 
     const auto literals = optiq::tokenize("123 45.67 'Aisha''s'");
     require(literals.success(), "literal tokenization succeeds");

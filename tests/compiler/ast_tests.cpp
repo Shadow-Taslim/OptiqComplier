@@ -67,6 +67,26 @@ int main() {
     require(escaped.find("a\\\"b\\\\c\\n") != std::string::npos,
             "printer escapes JSON string literals");
 
+    Program program;
+    program.statements.push_back(std::make_unique<LetStatement>(
+        SourceLocation{}, "ok",
+        std::make_unique<LiteralExpression>(SourceLocation{}, true)));
+    auto query = std::make_unique<SelectStatement>();
+    query->from = TableReference{{}, "employees", std::nullopt};
+    program.statements.push_back(
+        std::make_unique<QueryStatement>(SourceLocation{}, std::move(query)));
+
+    const std::string programJson = printProgramJson(program);
+    require(programJson.find("\"type\": \"Program\"") != std::string::npos,
+            "printer emits the program root");
+    require(programJson.find("\"type\": \"LetStatement\"") != std::string::npos,
+            "printer emits let statements");
+    require(programJson.find("\"kind\": \"boolean\"") != std::string::npos,
+            "printer emits boolean literals");
+    require(programJson.find("\"type\": \"QueryStatement\"") != std::string::npos &&
+                programJson.find("\"type\": \"SelectStatement\"") != std::string::npos,
+            "printer nests queries inside query statements");
+
     std::cout << "PASS: AST ownership, structure, traversal, and JSON printing\n";
     return 0;
 }
