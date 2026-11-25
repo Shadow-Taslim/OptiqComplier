@@ -5,17 +5,18 @@
 
 %lex-param { optiq::TokenStream& tokens }
 %parse-param { optiq::TokenStream& tokens }
-%parse-param { optiq::ParseResult& result }
+%parse-param { optiq::ProgramParseResult& result }
 
 %code requires {
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 #include "optiq/ast.hpp"
 namespace optiq {
 class TokenStream;
-struct ParseResult;
+struct ProgramParseResult;
 }
 }
 
@@ -30,7 +31,7 @@ using namespace optiq;
 
 int yylex(YYSTYPE* value, YYLTYPE* location, optiq::TokenStream& tokens);
 void yyerror(YYLTYPE* location, optiq::TokenStream& tokens,
-             optiq::ParseResult& result, const char* message);
+             optiq::ProgramParseResult& result, const char* message);
 
 SourceLocation toLocation(const YYLTYPE& location) {
     return SourceLocation{location.first_line, location.first_column, 0};
@@ -66,6 +67,9 @@ Expression* makeBinary(const YYLTYPE& location, BinaryExpression::Operator op,
     optiq::OrderByClause* orderBy;
     optiq::LimitClause* limit;
     optiq::SelectStatement* statement;
+    optiq::Statement* stmt;
+    std::vector<std::unique_ptr<optiq::Statement>>* stmtList;
+    optiq::Program* program;
 }
 
 %token <string> IDENTIFIER STRING_LITERAL
@@ -74,7 +78,8 @@ Expression* makeBinary(const YYLTYPE& location, BinaryExpression::Operator op,
 
 %token SELECT FROM AS INNER JOIN ON WHERE GROUP BY ORDER ASC DESC LIMIT
 %token AND OR NOT COUNT SUM AVG MIN MAX
-%token LEFT_PAREN RIGHT_PAREN COMMA SEMICOLON DOT
+%token LET IF ELSE WHILE PRINT TRUE FALSE
+%token LEFT_PAREN RIGHT_PAREN LEFT_BRACE RIGHT_BRACE COMMA SEMICOLON DOT
 %token EQUAL NOT_EQUAL LESS LESS_EQUAL GREATER GREATER_EQUAL
 %token PLUS MINUS STAR SLASH
 
@@ -93,6 +98,10 @@ Expression* makeBinary(const YYLTYPE& location, BinaryExpression::Operator op,
 %type <orderBy> order_by_opt
 %type <limit> limit_opt
 %type <statement> select_statement
+%type <program> program
+%type <stmt> statement let_statement assign_statement print_statement
+%type <stmt> if_statement while_statement query_statement
+%type <stmtList> statement_list block else_part
 %type <expression> expression or_expression and_expression not_expression
 %type <expression> predicate additive_expression multiplicative_expression
 %type <expression> unary_expression primary_expression function_call
@@ -103,18 +112,125 @@ Expression* makeBinary(const YYLTYPE& location, BinaryExpression::Operator op,
 %destructor { delete $$; } <string> <optionalString> <expression> <column>
 %destructor { delete $$; } <selectItem> <selectItems> <table> <join> <where>
 %destructor { delete $$; } <groupBy> <columns> <orderItem> <orderItems> <orderBy>
-%destructor { delete $$; } <limit> <statement>
+%destructor { delete $$; } <limit> <statement> <stmt> <stmtList> <program>
 
 %%
 
 input:
-    select_statement semicolon_opt
-        { result.statement.reset($1); }
+    program
+        { result.program.reset($1); }
     ;
 
-semicolon_opt:
+program:
+    statement_list
+        {
+            auto* parsed = new Program;
+            parsed->statements = std::move(*$1);
+            delete $1;
+            $$ = parsed;
+        }
+    ;
+
+statement_list:
     %empty
-    | SEMICOLON
+        { $$ = new std::vector<std::unique_ptr<Statement>>; }
+    | statement_list statement
+        {
+            $$ = $1;
+            $$->push_back(std::unique_ptr<Statement>($2));
+        }
+    ;
+
+statement:
+    let_statement      { $$ = $1; }
+    | assign_statement { $$ = $1; }
+    | print_statement  { $$ = $1; }
+    | if_statement     { $$ = $1; }
+    | while_statement  { $$ = $1; }
+    | query_statement  { $$ = $1; }
+    ;
+
+let_statement:
+    LET identifier EQUAL expression SEMICOLON
+        {
+            $$ = new LetStatement(toLocation(@$), std::move(*$2),
+                                  std::unique_ptr<Expression>($4));
+            delete $2;
+        }
+    | LET identifier EQUAL select_statement SEMICOLON
+        {
+            $$ = new LetStatement(toLocation(@$), std::move(*$2),
+                std::unique_ptr<Expression>(
+                    new QueryExpression(toLocation(@4),
+                                        std::unique_ptr<SelectStatement>($4))));
+            delete $2;
+        }
+    ;
+
+assign_statement:
+    IDENTIFIER EQUAL expression SEMICOLON
+        {
+            $$ = new AssignStatement(toLocation(@$), std::move(*$1),
+                                     std::unique_ptr<Expression>($3));
+            delete $1;
+        }
+    | IDENTIFIER EQUAL select_statement SEMICOLON
+        {
+            $$ = new AssignStatement(toLocation(@$), std::move(*$1),
+                std::unique_ptr<Expression>(
+                    new QueryExpression(toLocation(@3),
+                                        std::unique_ptr<SelectStatement>($3))));
+            delete $1;
+        }
+    ;
+
+print_statement:
+    PRINT LEFT_PAREN expression RIGHT_PAREN SEMICOLON
+        { $$ = new PrintStatement(toLocation(@$), std::unique_ptr<Expression>($3)); }
+    ;
+
+if_statement:
+    IF LEFT_PAREN expression RIGHT_PAREN block else_part
+        {
+            auto* parsed = new IfStatement(toLocation(@$), std::unique_ptr<Expression>($3));
+            parsed->thenBlock = std::move(*$5);
+            parsed->elseBlock = std::move(*$6);
+            delete $5;
+            delete $6;
+            $$ = parsed;
+        }
+    ;
+
+else_part:
+    %empty
+        { $$ = new std::vector<std::unique_ptr<Statement>>; }
+    | ELSE block
+        { $$ = $2; }
+    | ELSE if_statement
+        {
+            $$ = new std::vector<std::unique_ptr<Statement>>;
+            $$->push_back(std::unique_ptr<Statement>($2));
+        }
+    ;
+
+while_statement:
+    WHILE LEFT_PAREN expression RIGHT_PAREN block
+        {
+            auto* parsed = new WhileStatement(toLocation(@$), std::unique_ptr<Expression>($3));
+            parsed->body = std::move(*$5);
+            delete $5;
+            $$ = parsed;
+        }
+    ;
+
+block:
+    LEFT_BRACE statement_list RIGHT_BRACE
+        { $$ = $2; }
+    ;
+
+query_statement:
+    select_statement SEMICOLON
+        { $$ = new QueryStatement(toLocation(@$), std::unique_ptr<SelectStatement>($1)); }
     ;
 
 select_statement:
@@ -377,6 +493,10 @@ primary_expression:
             $$ = new LiteralExpression(toLocation(@$), std::move(*$1));
             delete $1;
         }
+    | TRUE
+        { $$ = new LiteralExpression(toLocation(@$), true); }
+    | FALSE
+        { $$ = new LiteralExpression(toLocation(@$), false); }
     | function_call
         { $$ = $1; }
     | LEFT_PAREN expression RIGHT_PAREN
