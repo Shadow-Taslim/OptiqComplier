@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -15,9 +15,12 @@ struct SourceLocation {
     int offset = 0;
 };
 
+enum class DataType { Int, Float, Bool };
+std::string dataTypeName(DataType type);
+
 class Expression {
 public:
-    enum class Kind { Column, Literal, Binary, Unary, Function, Query };
+    enum class Kind { Variable, Literal, Unary, Binary };
 
     Expression(Kind kind, SourceLocation location) : kind(kind), location(location) {}
     virtual ~Expression() = default;
@@ -31,34 +34,38 @@ public:
     SourceLocation location;
 };
 
-class ColumnReference final : public Expression {
+class VariableExpression final : public Expression {
 public:
-    ColumnReference(SourceLocation location, std::string name,
-                    std::optional<std::string> qualifier = std::nullopt)
-        : Expression(Kind::Column, location), name(std::move(name)),
-          qualifier(std::move(qualifier)) {}
+    VariableExpression(SourceLocation location, std::string name)
+        : Expression(Kind::Variable, location), name(std::move(name)) {}
 
     std::string name;
-    std::optional<std::string> qualifier;
 };
 
 class LiteralExpression final : public Expression {
 public:
-    enum class LiteralKind { Integer, Decimal, String, Boolean };
-    using Value = std::variant<std::int64_t, double, std::string, bool>;
+    using Value = std::variant<std::int64_t, double, bool>;
 
     LiteralExpression(SourceLocation location, std::int64_t value)
-        : Expression(Kind::Literal, location), literalKind(LiteralKind::Integer), value(value) {}
+        : Expression(Kind::Literal, location), type(DataType::Int), value(value) {}
     LiteralExpression(SourceLocation location, double value)
-        : Expression(Kind::Literal, location), literalKind(LiteralKind::Decimal), value(value) {}
-    LiteralExpression(SourceLocation location, std::string value)
-        : Expression(Kind::Literal, location), literalKind(LiteralKind::String),
-          value(std::move(value)) {}
+        : Expression(Kind::Literal, location), type(DataType::Float), value(value) {}
     LiteralExpression(SourceLocation location, bool value)
-        : Expression(Kind::Literal, location), literalKind(LiteralKind::Boolean), value(value) {}
+        : Expression(Kind::Literal, location), type(DataType::Bool), value(value) {}
 
-    LiteralKind literalKind;
+    DataType type;
     Value value;
+};
+
+class UnaryExpression final : public Expression {
+public:
+    enum class Operator { Not, Negate };
+
+    UnaryExpression(SourceLocation location, Operator op, std::unique_ptr<Expression> operand)
+        : Expression(Kind::Unary, location), op(op), operand(std::move(operand)) {}
+
+    Operator op;
+    std::unique_ptr<Expression> operand;
 };
 
 class BinaryExpression final : public Expression {
@@ -66,7 +73,7 @@ public:
     enum class Operator {
         Or, And,
         Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-        Add, Subtract, Multiply, Divide
+        Add, Subtract, Multiply, Divide, Modulo
     };
 
     BinaryExpression(SourceLocation location, Operator op,
@@ -79,128 +86,11 @@ public:
     std::unique_ptr<Expression> right;
 };
 
-class UnaryExpression final : public Expression {
-public:
-    enum class Operator { Not, Positive, Negative };
+using StatementList = std::vector<std::unique_ptr<class Statement>>;
 
-    UnaryExpression(SourceLocation location, Operator op, std::unique_ptr<Expression> operand)
-        : Expression(Kind::Unary, location), op(op), operand(std::move(operand)) {}
-
-    Operator op;
-    std::unique_ptr<Expression> operand;
-};
-
-class FunctionCall final : public Expression {
-public:
-    enum class Function { Count, Sum, Average, Minimum, Maximum };
-
-    FunctionCall(SourceLocation location, Function function,
-                 std::unique_ptr<Expression> argument)
-        : Expression(Kind::Function, location), function(function),
-          argument(std::move(argument)), starArgument(false) {}
-
-    static std::unique_ptr<FunctionCall> countStar(SourceLocation location) {
-        auto call = std::make_unique<FunctionCall>(location, Function::Count, nullptr);
-        call->starArgument = true;
-        return call;
-    }
-
-    Function function;
-    std::unique_ptr<Expression> argument;
-    bool starArgument;
-};
-
-struct SelectItem {
-    static SelectItem wildcard(SourceLocation location,
-                               std::optional<std::string> qualifier = std::nullopt) {
-        SelectItem item;
-        item.location = location;
-        item.isWildcard = true;
-        item.qualifier = std::move(qualifier);
-        return item;
-    }
-
-    static SelectItem expressionItem(SourceLocation location,
-                                     std::unique_ptr<Expression> expression,
-                                     std::optional<std::string> alias = std::nullopt) {
-        SelectItem item;
-        item.location = location;
-        item.expression = std::move(expression);
-        item.alias = std::move(alias);
-        return item;
-    }
-
-    SourceLocation location;
-    std::unique_ptr<Expression> expression;
-    std::optional<std::string> alias;
-    bool isWildcard = false;
-    std::optional<std::string> qualifier;
-};
-
-struct TableReference {
-    SourceLocation location;
-    std::string name;
-    std::optional<std::string> alias;
-};
-
-struct JoinClause {
-    SourceLocation location;
-    TableReference table;
-    std::unique_ptr<Expression> condition;
-};
-
-struct WhereClause {
-    SourceLocation location;
-    std::unique_ptr<Expression> predicate;
-};
-
-struct GroupByClause {
-    SourceLocation location;
-    std::vector<ColumnReference> columns;
-};
-
-enum class OrderDirection { Ascending, Descending };
-
-struct OrderByItem {
-    SourceLocation location;
-    ColumnReference column;
-    OrderDirection direction = OrderDirection::Ascending;
-};
-
-struct OrderByClause {
-    SourceLocation location;
-    std::vector<OrderByItem> items;
-};
-
-struct LimitClause {
-    SourceLocation location;
-    std::int64_t count = 0;
-};
-
-struct SelectStatement {
-    SourceLocation location;
-    std::vector<SelectItem> items;
-    TableReference from;
-    std::optional<JoinClause> join;
-    std::optional<WhereClause> where;
-    std::optional<GroupByClause> groupBy;
-    std::optional<OrderByClause> orderBy;
-    std::optional<LimitClause> limit;
-};
-
-// A SELECT query used as an expression; its runtime value is a table.
-class QueryExpression final : public Expression {
-public:
-    QueryExpression(SourceLocation location, std::unique_ptr<SelectStatement> query)
-        : Expression(Kind::Query, location), query(std::move(query)) {}
-
-    std::unique_ptr<SelectStatement> query;
-};
-
-// Optiq mini-language statements. A Program is a sequence of statements.
 class Statement {
 public:
-    enum class Kind { Let, Assign, Print, If, While, Query };
+    enum class Kind { Declaration, Assignment, Print, If, While, Block };
 
     Statement(Kind kind, SourceLocation location) : kind(kind), location(location) {}
     virtual ~Statement() = default;
@@ -214,22 +104,21 @@ public:
     SourceLocation location;
 };
 
-class LetStatement final : public Statement {
+class DeclarationStatement final : public Statement {
 public:
-    LetStatement(SourceLocation location, std::string name,
-                 std::unique_ptr<Expression> initializer)
-        : Statement(Kind::Let, location), name(std::move(name)),
-          initializer(std::move(initializer)) {}
+    DeclarationStatement(SourceLocation location, DataType declaredType, std::string name)
+        : Statement(Kind::Declaration, location), declaredType(declaredType),
+          name(std::move(name)) {}
 
+    DataType declaredType;
     std::string name;
-    std::unique_ptr<Expression> initializer;
 };
 
-class AssignStatement final : public Statement {
+class AssignmentStatement final : public Statement {
 public:
-    AssignStatement(SourceLocation location, std::string name,
-                    std::unique_ptr<Expression> value)
-        : Statement(Kind::Assign, location), name(std::move(name)),
+    AssignmentStatement(SourceLocation location, std::string name,
+                        std::unique_ptr<Expression> value)
+        : Statement(Kind::Assignment, location), name(std::move(name)),
           value(std::move(value)) {}
 
     std::string name;
@@ -246,34 +135,38 @@ public:
 
 class IfStatement final : public Statement {
 public:
-    IfStatement(SourceLocation location, std::unique_ptr<Expression> condition)
-        : Statement(Kind::If, location), condition(std::move(condition)) {}
+    IfStatement(SourceLocation location, std::unique_ptr<Expression> condition,
+                StatementList thenBlock, StatementList elseBlock = {}, bool hasElse = false)
+        : Statement(Kind::If, location), condition(std::move(condition)),
+          thenBlock(std::move(thenBlock)), elseBlock(std::move(elseBlock)), hasElse(hasElse) {}
 
     std::unique_ptr<Expression> condition;
-    std::vector<std::unique_ptr<Statement>> thenBlock;
-    // Empty when there is no else part; an else-if chain is a single IfStatement entry.
-    std::vector<std::unique_ptr<Statement>> elseBlock;
+    StatementList thenBlock;
+    StatementList elseBlock;
+    bool hasElse;
 };
 
 class WhileStatement final : public Statement {
 public:
-    WhileStatement(SourceLocation location, std::unique_ptr<Expression> condition)
-        : Statement(Kind::While, location), condition(std::move(condition)) {}
+    WhileStatement(SourceLocation location, std::unique_ptr<Expression> condition,
+                   StatementList body)
+        : Statement(Kind::While, location), condition(std::move(condition)),
+          body(std::move(body)) {}
 
     std::unique_ptr<Expression> condition;
-    std::vector<std::unique_ptr<Statement>> body;
+    StatementList body;
 };
 
-class QueryStatement final : public Statement {
+class BlockStatement final : public Statement {
 public:
-    QueryStatement(SourceLocation location, std::unique_ptr<SelectStatement> query)
-        : Statement(Kind::Query, location), query(std::move(query)) {}
+    BlockStatement(SourceLocation location, StatementList statements)
+        : Statement(Kind::Block, location), statements(std::move(statements)) {}
 
-    std::unique_ptr<SelectStatement> query;
+    StatementList statements;
 };
 
 struct Program {
-    std::vector<std::unique_ptr<Statement>> statements;
+    StatementList statements;
 };
 
 } // namespace optiq

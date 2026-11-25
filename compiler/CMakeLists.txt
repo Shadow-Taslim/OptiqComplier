@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(OPTIQ_BUILD_TESTS "Build OptiqCompiler tests" ON)
 
 add_library(optiq_ast
+    src/ast.cpp
     src/ast_printer.cpp
 )
 target_include_directories(optiq_ast PUBLIC include)
