@@ -1,0 +1,7 @@
+// if / else with a boolean condition
+let headcount = 8;
+if (headcount > 5) {
+    print('large team');
+} else {
+    print('small team');
+}

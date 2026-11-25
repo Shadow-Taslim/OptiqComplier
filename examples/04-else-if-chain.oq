@@ -1,0 +1,10 @@
+// else-if chains and boolean literals
+let score = 72;
+let passed = true;
+if (score >= 90) {
+    print('excellent');
+} else if (score >= 50 and passed == true) {
+    print('pass');
+} else {
+    print('fail');
+}

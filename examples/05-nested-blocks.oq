@@ -1,0 +1,13 @@
+// Nested blocks: a condition inside a loop
+let level = 1;
+let steps = 0;
+while (level <= 4) {
+    if (level == 3) {
+        print('halfway');
+    } else {
+        print(level);
+    }
+    level = level + 1;
+    steps = steps + 1;
+}
+print(steps);
