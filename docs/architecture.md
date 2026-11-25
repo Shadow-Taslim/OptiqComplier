@@ -2,16 +2,16 @@
 
 ## Status
 
-Week 1 established the repository layout, interface contract, sample catalog, and acceptance expectations. Week 2 implements the compiler frontend: Flex lexical analysis, Bison SQL parsing, a strongly typed C++17 AST, JSON AST printing, source-located diagnostics, the `optiq_cli` executable, and automated tests.
+Week 1 established the repository layout, interface contract, sample catalog, and acceptance expectations, and was then extended with the [Optiq Language Specification](language-spec.md): Optiq is a **mini programming language** with first-class SQL queries. Week 2 implements the compiler frontend: Flex lexical analysis, Bison parsing for both the imperative language (variables, assignment, `if`/`else`, `while`, `print`) and the SQL subset, a strongly typed C++17 AST, JSON AST printing, source-located diagnostics, the `optiq_cli` executable, and automated tests.
 
-Semantic checks, relational planning, optimization, CSV execution, Express handlers, and the React interface remain intentionally unimplemented.
+Semantic checks, relational planning, optimization, CSV execution, interpretation, Express handlers, and the React interface remain intentionally unimplemented.
 
 ## Components
 
-1. **AST and printer (`compiler/include/optiq/`, `compiler/src/ast_printer.cpp`)** — Typed statement, clause, and expression nodes with explicit ownership and deterministic JSON traversal.
+1. **AST and printer (`compiler/include/optiq/`, `compiler/src/ast_printer.cpp`)** — Typed program, statement, clause, and expression nodes with explicit ownership and deterministic JSON traversal. The `Statement` hierarchy covers `let`, assignment, `print`, `if`/`else`, `while`, and query statements; a `Program` owns the top-level statement list.
 2. **Lexer (`compiler/src/lexer.l`)** — Reentrant Flex scanner that produces a standalone token stream. `ScannerState` owns tokenization results and tracks line, column, and byte-offset positions.
 3. **Parser (`compiler/src/parser.y`)** — Pure Bison parser that consumes the token stream and constructs the AST. Lexer and parser errors use the same `Diagnostic` shape.
-4. **CLI (`compiler/src/cli.cpp`)** — Accepts SQL from arguments or stdin, writes AST JSON to stdout on success, and writes diagnostics to stderr on failure.
+4. **CLI (`compiler/src/cli.cpp`)** — Accepts an Optiq program from a `.oq` file, arguments, or stdin (plus a `--sql` single-query mode), writes AST JSON to stdout on success, and writes diagnostics to stderr on failure.
 5. **Express API (`apps/api/`)** — Planned request validation, compiler process management, timeouts, and safe error propagation.
 6. **React frontend (`apps/web/`)** — Planned SQL input, compile/execute actions, plan/result views, errors, and statistics.
 7. **Sample catalog (`data/`)** — Versioned table metadata and small CSV datasets for later semantic and execution milestones.
@@ -20,7 +20,7 @@ Semantic checks, relational planning, optimization, CSV execution, Express handl
 ## Compiler Frontend Flow
 
 ```text
-SQL text
+Optiq source (program or single SQL query)
    │
    ▼
 Flex scanner + ScannerState
@@ -31,9 +31,9 @@ TokenStream
    │ yylex adapter maps TokenKind to Bison tokens
    ▼
 Bison LALR parser
-   │ unique_ptr<Expression> and typed clause values
+   │ unique_ptr<Statement> / unique_ptr<Expression> and typed clause values
    ▼
-SelectStatement AST
+Program AST (statements; query statements wrap a SelectStatement)
    │
    ├── success ──> AstPrinter ──> JSON stdout
    └── failure ──> Diagnostic ──> line/column stderr
@@ -41,11 +41,23 @@ SelectStatement AST
 
 The lexer is deliberately independent of generated Bison headers. The parser adapts its token stream in `parser.cpp`, preserving clear lexer/parser separation and allowing lexical tests to run without invoking the grammar.
 
+## Optiq Language Grammar Boundary
+
+The extended Week 2 frontend accepts full Optiq programs as defined by the EBNF in [language-spec.md](language-spec.md):
+
+- `LET` declarations, reassignment, and `PRINT` output, each terminated by `;`.
+- `IF` / `ELSE IF` / `ELSE` conditionals and `WHILE` loops with brace-delimited blocks; blocks nest arbitrarily.
+- Boolean literals `TRUE`/`FALSE` and the same expression precedence ladder used by SQL.
+- A standalone `SELECT ... ;` query statement, and query expressions such as `let rows = SELECT ...;`.
+- `//`, `--`, and `/* ... */` comments.
+
+Every SQL query from the previous SQL-only frontend remains a valid Optiq program: it parses as a one-statement `Program`. `parseSql` is retained as a compatibility entry point that accepts exactly one query and rejects anything else.
+
 ## SQL Grammar Boundary
 
 The implemented frontend accepts the 12 documented fixtures and the following Week 2 grammar:
 
-- One `SELECT` statement with an optional trailing semicolon.
+- One `SELECT` statement; as a query statement inside a program it ends with `;`.
 - Wildcard and expression select lists.
 - One base table with an optional alias, with or without `AS`.
 - Zero or one `JOIN`/`INNER JOIN` with an `ON` expression.
@@ -74,9 +86,9 @@ Arithmetic, boolean, and comparison levels are left associative where repeated o
 
 ## AST Ownership and Traversal
 
-`Expression` is the abstract base for `ColumnReference`, `LiteralExpression`, `BinaryExpression`, `UnaryExpression`, and `FunctionCall`. Statement and clause structures use value semantics where practical and `std::unique_ptr` for owned expression children. Bison semantic values use raw pointers only during reduction; each successful reduction transfers ownership into AST nodes, and `%destructor` rules release discarded semantic values on parser failure.
+`Expression` is the abstract base for `ColumnReference`, `LiteralExpression`, `BinaryExpression`, `UnaryExpression`, `FunctionCall`, and `QueryExpression`; `Statement` is the abstract base for the six statement nodes, and a `Program` owns the top-level statements. Statement and clause structures use value semantics where practical and `std::unique_ptr` for owned children. Bison semantic values use raw pointers only during reduction; each successful reduction transfers ownership into AST nodes, and `%destructor` rules release discarded semantic values on parser failure.
 
-`AstPrinter` traverses nodes through their typed `Expression::Kind`, producing deterministic JSON without adding a third-party JSON dependency. AST JSON is a Week 2 diagnostic representation and is distinct from the future compile/execute API envelope.
+`AstPrinter` traverses nodes through their typed `Expression::Kind` and `Statement::Kind`, producing deterministic JSON without adding a third-party JSON dependency. AST JSON is a Week 2 diagnostic representation and is distinct from the future compile/execute API envelope.
 
 ## Source Locations and Diagnostics
 
@@ -123,21 +135,25 @@ The browser will never start the compiler directly. Express will not pass arbitr
 - `lexer_tests` — keywords, token categories, literals, comments, source locations, and lexical failures.
 - `parser_tests` — grammar coverage, precedence, AST structure, empty/missing clauses, invalid characters, and diagnostics.
 - `fixture_tests` — all 12 documented SQL fixtures and their expected AST structures.
-- `cli_valid`, `cli_invalid`, `cli_help`, and `cli_stdin` — output, exit behavior, help, argument mode, and standard-input mode.
+- `program_tests` — statement grammar, query expressions, program-level precedence, and invalid-program diagnostics.
+- `program_fixture_tests` — all 10 documented Optiq example programs and their expected statement structures.
+- `cli_valid`, `cli_program`, `cli_invalid`, `cli_invalid_program`, `cli_help`, and `cli_stdin` — output, exit behavior, help, argument, program, and standard-input modes.
 
 Fixture parsing does not execute the query or compare result rows. Execution tests will be added only with the CSV executor.
 
 ## Later Implementation Order
 
-1. Add catalog loading, semantic checks, and semantic-error tests.
-2. Add relational planning and the three optimization passes.
-3. Add CSV execution and verify all documented query results.
-4. Adapt the CLI/process boundary to the versioned API contract.
-5. Add the Express adapter and API integration tests.
-6. Add the React workflow and end-to-end tests.
+1. Add catalog loading, semantic checks, and semantic-error tests (name resolution for variables vs columns).
+2. Add the tree-walking interpreter for statements (`let`, assignment, `print`, `if`, `while`).
+3. Add relational planning and the three optimization passes.
+4. Add CSV execution and verify all documented query results.
+5. Adapt the CLI/process boundary to the versioned API contract.
+6. Add the Express adapter and API integration tests.
+7. Add the React workflow and end-to-end tests.
 
 ## Explicit Non-Goals for Week 2
 
+- No program interpretation or execution — statements parse into an AST but produce no runtime behavior yet.
 - No semantic validation, relational plans, optimization, or CSV execution.
 - No Express routes, React pages, or UI components.
 - No database, authentication, deployment, or persistence beyond the sample CSV files.
