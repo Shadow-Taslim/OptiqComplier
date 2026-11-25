@@ -16,8 +16,6 @@ struct ParseResult {
     bool success() const { return program != nullptr && errors.empty(); }
 };
 
-// Parses a full program in the course-specified language (.mc source).
-// Uses Bison error recovery, so `errors` may contain several diagnostics.
 ParseResult parseProgram(const std::string& source);
 
 } // namespace optiq

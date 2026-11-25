@@ -3,7 +3,6 @@
 #include <string>
 
 #include "optiq/ast.hpp"
-#include "optiq/ast_printer.hpp"
 #include "optiq/parser.hpp"
 
 namespace {
@@ -15,19 +14,18 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-optiq::ParseResult valid(const std::string& sql) {
-    auto result = optiq::parseSql(sql);
-    if (result.error) {
-        std::cerr << "Unexpected parse error for " << sql << ": "
-                  << result.error->message << '\n';
+optiq::ParseResult validExpression(const std::string& source) {
+    auto result = optiq::parseProgram("print(" + source + ");");
+    if (!result.success()) {
+        std::cerr << "Unexpected parse error for " << source << '\n';
     }
-    require(result.success(), "valid SQL parses: " + sql);
+    require(result.success(), "valid expression parses: " + source);
     return result;
 }
 
-void invalid(const std::string& sql) {
-    const auto result = optiq::parseSql(sql);
-    require(!result.success() && result.error.has_value(), "invalid SQL is rejected: " + sql);
+const optiq::Expression& printedExpression(const optiq::ParseResult& result) {
+    const auto& print = static_cast<const optiq::PrintStatement&>(*result.program->statements[0]);
+    return *print.expression;
 }
 
 const optiq::BinaryExpression& binary(const optiq::Expression& expression) {
@@ -40,70 +38,42 @@ const optiq::BinaryExpression& binary(const optiq::Expression& expression) {
 int main() {
     using namespace optiq;
 
-    auto arithmetic = valid("SELECT 1 + 2 * 3 FROM employees;");
-    const auto& sum = binary(*arithmetic.statement->items[0].expression);
+    const auto arithmetic = validExpression("1 + 2 * 6 % 4");
+    const auto& sum = binary(printedExpression(arithmetic));
     require(sum.op == BinaryExpression::Operator::Add, "addition is the root operation");
-    require(binary(*sum.right).op == BinaryExpression::Operator::Multiply,
-            "multiplication binds more tightly than addition");
+    require(binary(*sum.right).op == BinaryExpression::Operator::Modulo,
+            "modulo shares multiplicative precedence");
+    require(binary(*binary(*sum.right).left).op == BinaryExpression::Operator::Multiply,
+            "multiplication and modulo are left associative");
 
-    auto boolean = valid("SELECT id FROM employees WHERE NOT a = 1 AND b = 2 OR c = 3;");
-    const auto& disjunction = binary(*boolean.statement->where->predicate);
-    require(disjunction.op == BinaryExpression::Operator::Or, "OR has the lowest precedence");
-    require(binary(*disjunction.left).op == BinaryExpression::Operator::And,
-            "AND binds more tightly than OR");
-    const auto& andExpression = binary(*disjunction.left);
-    require(andExpression.left->kind == Expression::Kind::Unary,
-            "NOT produces a unary expression");
-    const auto& negation = static_cast<const UnaryExpression&>(*andExpression.left);
-    require(binary(*negation.operand).op == BinaryExpression::Operator::Equal,
-            "NOT applies to the comparison");
+    const auto logical = validExpression("!ready || x < 3 && done");
+    const auto& disjunction = binary(printedExpression(logical));
+    require(disjunction.op == BinaryExpression::Operator::Or, "|| has the lowest precedence");
+    require(binary(*disjunction.right).op == BinaryExpression::Operator::And,
+            "&& binds more tightly than ||");
+    require(disjunction.left->kind == Expression::Kind::Unary,
+            "logical negation produces a unary node");
 
-    auto full = valid(
-        "SELECT e.name AS employee_name, COUNT(*) AS total "
-        "FROM employees e INNER JOIN departments d ON e.dept_id = d.id "
-        "WHERE e.salary >= 50000 + 20000 "
-        "GROUP BY e.name ORDER BY e.name DESC LIMIT 5;");
-    require(full.statement->items.size() == 2, "select list contains both items");
-    require(full.statement->items[0].alias == std::optional<std::string>("employee_name"),
-            "select alias is retained");
-    require(full.statement->from.alias == std::optional<std::string>("e"),
-            "table alias is retained");
-    require(full.statement->join.has_value(), "INNER JOIN is represented");
-    require(full.statement->groupBy.has_value(), "GROUP BY is represented");
-    require(full.statement->orderBy->items[0].direction == OrderDirection::Descending,
-            "DESC ordering is represented");
-    require(full.statement->limit->count == 5, "LIMIT is represented");
-    const auto& count = static_cast<const FunctionCall&>(
-        *full.statement->items[1].expression);
-    require(count.function == FunctionCall::Function::Count && count.starArgument,
-            "COUNT(*) is parsed as an aggregate");
+    auto unaryResult = validExpression("-(x + 1) * 2");
+    const auto& unary = printedExpression(unaryResult);
+    require(binary(unary).left->kind == Expression::Kind::Unary,
+            "unary minus binds to the parenthesized expression");
+    auto literalResult = validExpression("3.25");
+    const auto& literal = printedExpression(literalResult);
+    require(literal.kind == Expression::Kind::Literal &&
+                static_cast<const LiteralExpression&>(literal).type == DataType::Float,
+            "float literal type is retained");
 
-    auto plainJoin = valid("SELECT * FROM employees e JOIN departments d ON e.dept_id=d.id");
-    require(plainJoin.statement->join.has_value(), "JOIN without INNER is accepted");
-    require(plainJoin.statement->items[0].isWildcard,
-            "wildcard selection is represented");
+    require(!optiq::parseProgram("print(a < b < c);").success(),
+            "comparison chaining is rejected by the non-associative grammar");
+    require(!optiq::parseProgram("print(a = b);").success(),
+            "assignment cannot be used as an expression");
 
-    auto aggregates = valid("SELECT SUM(salary), AVG(salary), MIN(salary), MAX(salary) FROM employees");
-    require(aggregates.statement->items.size() == 4, "all aggregate functions parse");
-    require(printAstJson(*aggregates.statement).find("SelectStatement") != std::string::npos,
-            "parsed AST can be printed");
+    auto located = optiq::parseProgram("int x;\nprint(x)");
+    require(!located.success() && !located.errors.empty() &&
+                located.errors[0].location.line == 2,
+            "syntax diagnostics include the source line");
 
-    invalid("");
-    invalid("SELECT FROM employees");
-    invalid("SELECT name employees");
-    invalid("SELECT name FROM");
-    invalid("SELECT name FROM employees WHERE");
-    invalid("SELECT name FROM employees LIMIT");
-    invalid("SELECT name FROM employees; SELECT * FROM departments");
-    invalid("SELECT name FROM employees ORDER salary");
-    invalid("SELECT SUM(*) FROM employees");
-    invalid("SELECT name FROM employees @");
-
-    auto locatedError = parseSql("SELECT name\nemployees");
-    require(locatedError.error.has_value(), "missing FROM reports an error");
-    require(locatedError.error->location.line == 2,
-            "syntax error includes the source line");
-
-    std::cout << "PASS: parser grammar, precedence, AST structure, and diagnostics\n";
+    std::cout << "PASS: expression grammar, precedence, associativity, and diagnostics\n";
     return 0;
 }
