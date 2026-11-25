@@ -17,7 +17,7 @@ struct SourceLocation {
 
 class Expression {
 public:
-    enum class Kind { Column, Literal, Binary, Unary, Function };
+    enum class Kind { Column, Literal, Binary, Unary, Function, Query };
 
     Expression(Kind kind, SourceLocation location) : kind(kind), location(location) {}
     virtual ~Expression() = default;
@@ -44,8 +44,8 @@ public:
 
 class LiteralExpression final : public Expression {
 public:
-    enum class LiteralKind { Integer, Decimal, String };
-    using Value = std::variant<std::int64_t, double, std::string>;
+    enum class LiteralKind { Integer, Decimal, String, Boolean };
+    using Value = std::variant<std::int64_t, double, std::string, bool>;
 
     LiteralExpression(SourceLocation location, std::int64_t value)
         : Expression(Kind::Literal, location), literalKind(LiteralKind::Integer), value(value) {}
@@ -54,6 +54,8 @@ public:
     LiteralExpression(SourceLocation location, std::string value)
         : Expression(Kind::Literal, location), literalKind(LiteralKind::String),
           value(std::move(value)) {}
+    LiteralExpression(SourceLocation location, bool value)
+        : Expression(Kind::Literal, location), literalKind(LiteralKind::Boolean), value(value) {}
 
     LiteralKind literalKind;
     Value value;
@@ -184,6 +186,94 @@ struct SelectStatement {
     std::optional<GroupByClause> groupBy;
     std::optional<OrderByClause> orderBy;
     std::optional<LimitClause> limit;
+};
+
+// A SELECT query used as an expression; its runtime value is a table.
+class QueryExpression final : public Expression {
+public:
+    QueryExpression(SourceLocation location, std::unique_ptr<SelectStatement> query)
+        : Expression(Kind::Query, location), query(std::move(query)) {}
+
+    std::unique_ptr<SelectStatement> query;
+};
+
+// Optiq mini-language statements. A Program is a sequence of statements.
+class Statement {
+public:
+    enum class Kind { Let, Assign, Print, If, While, Query };
+
+    Statement(Kind kind, SourceLocation location) : kind(kind), location(location) {}
+    virtual ~Statement() = default;
+
+    Statement(const Statement&) = delete;
+    Statement& operator=(const Statement&) = delete;
+    Statement(Statement&&) = default;
+    Statement& operator=(Statement&&) = default;
+
+    Kind kind;
+    SourceLocation location;
+};
+
+class LetStatement final : public Statement {
+public:
+    LetStatement(SourceLocation location, std::string name,
+                 std::unique_ptr<Expression> initializer)
+        : Statement(Kind::Let, location), name(std::move(name)),
+          initializer(std::move(initializer)) {}
+
+    std::string name;
+    std::unique_ptr<Expression> initializer;
+};
+
+class AssignStatement final : public Statement {
+public:
+    AssignStatement(SourceLocation location, std::string name,
+                    std::unique_ptr<Expression> value)
+        : Statement(Kind::Assign, location), name(std::move(name)),
+          value(std::move(value)) {}
+
+    std::string name;
+    std::unique_ptr<Expression> value;
+};
+
+class PrintStatement final : public Statement {
+public:
+    PrintStatement(SourceLocation location, std::unique_ptr<Expression> expression)
+        : Statement(Kind::Print, location), expression(std::move(expression)) {}
+
+    std::unique_ptr<Expression> expression;
+};
+
+class IfStatement final : public Statement {
+public:
+    IfStatement(SourceLocation location, std::unique_ptr<Expression> condition)
+        : Statement(Kind::If, location), condition(std::move(condition)) {}
+
+    std::unique_ptr<Expression> condition;
+    std::vector<std::unique_ptr<Statement>> thenBlock;
+    // Empty when there is no else part; an else-if chain is a single IfStatement entry.
+    std::vector<std::unique_ptr<Statement>> elseBlock;
+};
+
+class WhileStatement final : public Statement {
+public:
+    WhileStatement(SourceLocation location, std::unique_ptr<Expression> condition)
+        : Statement(Kind::While, location), condition(std::move(condition)) {}
+
+    std::unique_ptr<Expression> condition;
+    std::vector<std::unique_ptr<Statement>> body;
+};
+
+class QueryStatement final : public Statement {
+public:
+    QueryStatement(SourceLocation location, std::unique_ptr<SelectStatement> query)
+        : Statement(Kind::Query, location), query(std::move(query)) {}
+
+    std::unique_ptr<SelectStatement> query;
+};
+
+struct Program {
+    std::vector<std::unique_ptr<Statement>> statements;
 };
 
 } // namespace optiq
