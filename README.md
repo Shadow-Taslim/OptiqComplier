@@ -63,7 +63,8 @@ comments. Full formal CFG: [docs/language-spec.md](docs/language-spec.md).
 ├── docs/
 │   ├── language-spec.md     # Formal language specification (CFG + semantic rules)
 │   ├── architecture.md      # Pipeline, module design, decisions
-│   └── verification.md      # Build/test verification record
+│   ├── verification.md      # Build/test verification record
+│   └── project-report.md    # Full report in the manual's chapter structure
 ├── Makefile                 # Convenience wrapper around CMake
 └── README.md
 ```
@@ -145,6 +146,12 @@ analyzer, TAC generator, golden-file program tests (all 11 test programs
 paired with expected output), and the CLI — passes with **0 grammar
 conflicts** and **0 compiler warnings**. Details:
 [docs/verification.md](docs/verification.md).
+
+## Project Report
+
+The complete report follows the manual's required chapter structure:
+[docs/project-report.md](docs/project-report.md). Fill in the team names,
+student IDs, section, instructor, and submission date before submission.
 
 ## Out of Scope (per the project manual)
 

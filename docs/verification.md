@@ -2,7 +2,12 @@
 
 **Date:** 26 November 2026
 **Milestone:** Complete compiler front-end + TAC for the course-specified language
-**Result:** **PASS — clean configure/build, conflict-free grammar, 13/13 automated tests**
+**Result:** **PASS — clean configure/build, conflict-free grammar, 13/13 automated tests**  
+**Verified GitHub revision:** `3525ef2948af4ca7f0fb89209c0bbb4510efa9ac` (`main`)
+
+The tracked compiler sources in a freshly downloaded GitHub archive were compared
+with the locally assembled tree before this clean verification. The archive did
+not contain generated scanner/parser sources or obsolete SQL fixtures.
 
 ## Scope Verified
 
