@@ -1,0 +1,9 @@
+price = 19.5
+t1 = price * 2
+t2 = t1 + 1
+total = t2
+t3 = total > 40
+t4 = !t3
+discounted = t4
+print total
+print discounted

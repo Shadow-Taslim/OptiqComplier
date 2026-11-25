@@ -1,0 +1,1 @@
+Semantic error at line 2, column 8: A while condition must be bool, not int
