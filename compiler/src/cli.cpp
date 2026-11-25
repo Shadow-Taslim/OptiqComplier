@@ -1,4 +1,6 @@
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -9,40 +11,83 @@
 namespace {
 
 void printUsage(std::ostream& output) {
-    output << "Usage: optiq_cli [SQL]\n"
-              "       Read SQL from standard input when no argument is supplied.\n\n"
-              "Exit codes: 0 = valid SQL, 2 = lexical or syntax error, 1 = internal error.\n";
+    output << "Usage: optiq_cli [--ast | --sql] [SOURCE | FILE]\n"
+              "       Parse an Optiq program and print its AST as JSON (default).\n"
+              "       --ast   Program mode: parse Optiq source (default).\n"
+              "       --sql   Query mode: parse a single SQL SELECT statement.\n"
+              "       Source is read from a file path, inline arguments, or stdin\n"
+              "       when no argument is supplied.\n\n"
+              "Exit codes: 0 = valid input, 2 = lexical or syntax error, 1 = internal error.\n";
+}
+
+bool isSourceFile(const std::string& argument) {
+    std::error_code status;
+    return std::filesystem::is_regular_file(argument, status);
+}
+
+std::string readFile(const std::string& path) {
+    std::ifstream input(path);
+    if (!input.good()) {
+        throw std::runtime_error("Unable to read source file: " + path);
+    }
+    return std::string(std::istreambuf_iterator<char>(input),
+                       std::istreambuf_iterator<char>());
+}
+
+int reportError(const optiq::Diagnostic& error) {
+    std::cerr << "error at line " << error.location.line
+              << ", column " << error.location.column << ": "
+              << error.message << '\n';
+    return 2;
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-        printUsage(std::cout);
-        return 0;
+    bool sqlMode = false;
+    std::string source;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string argument = argv[i];
+        if (argument == "--help" || argument == "-h") {
+            printUsage(std::cout);
+            return 0;
+        }
+        if (argument == "--ast") {
+            continue;
+        }
+        if (argument == "--sql") {
+            sqlMode = true;
+            continue;
+        }
+        if (source.empty() && isSourceFile(argument)) {
+            source = readFile(argument);
+            continue;
+        }
+        if (!source.empty()) source.push_back(' ');
+        source += argument;
     }
 
-    std::string sql;
-    if (argc > 1) {
-        for (int i = 1; i < argc; ++i) {
-            if (i > 1) sql.push_back(' ');
-            sql += argv[i];
-        }
-    } else {
-        sql.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+    if (source.empty()) {
+        source.assign(std::istreambuf_iterator<char>(std::cin),
+                      std::istreambuf_iterator<char>());
     }
 
     try {
-        auto result = optiq::parseSql(sql);
-        if (!result.success()) {
-            const auto& error = *result.error;
-            std::cerr << "SQL error at line " << error.location.line
-                      << ", column " << error.location.column << ": "
-                      << error.message << '\n';
-            return 2;
+        if (sqlMode) {
+            auto result = optiq::parseSql(source);
+            if (!result.success()) {
+                return reportError(*result.error);
+            }
+            optiq::writeAstJson(std::cout, *result.statement);
+            return 0;
         }
 
-        optiq::writeAstJson(std::cout, *result.statement);
+        auto result = optiq::parseProgram(source);
+        if (!result.success()) {
+            return reportError(*result.error);
+        }
+        optiq::writeProgramJson(std::cout, *result.program);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Internal compiler error: " << error.what() << '\n';
