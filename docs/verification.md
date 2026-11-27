@@ -5,8 +5,14 @@
 **Date:** 27 November 2026  
 **Milestone:** Week 1 architecture + Week 2 C/C++ lexer  
 **Result:** **PASS — 13/13 academic tests and 21/21 C/C++ tests**  
-**Repository state:** Local migration changes based on `academic-baseline` commit
-`5179118fbf40a5a9a50a90d31f02651c6e73b7e4`; not committed or pushed by this run.
+**Verified GitHub branch:** `cpp-migration`  
+**Verified GitHub revision:** `ecc360712c8d65c5958e362ccead5792b9eca76a`  
+**Academic base:** `academic-baseline` commit
+`5179118fbf40a5a9a50a90d31f02651c6e73b7e4`.
+
+The complete branch was downloaded fresh from GitHub after publishing. Both
+standalone builds and both complete test suites were executed against that
+remote archive.
 
 Environment: GNU C++ 12.2.0, Flex 2.6.4, Bison 3.8.2, CMake 3.25.1, Linux.
 
