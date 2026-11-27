@@ -1,5 +1,46 @@
 # Verification Record
 
+## Week 3 Parser Verification
+
+**Date:** 28 November 2026
+
+**Milestone:** C/C++ Bison parser, preliminary AST, diagnostics, and CLI
+
+**Result:** **PASS — 13/13 academic tests and 64/64 C/C++ tests**
+
+**Source base:** `main` commit `39473c5f9dbaa8638c3b62f1071bc6d9167cfef5`
+
+**Publication:** Staged normal commits on `main`; no force-push or branch deletion.
+
+Before editing, the fresh `main` archive passed 13/13 academic and 21/21 C/C++
+tests. After implementation, `make test` independently rebuilt both projects and
+executed every academic and C/C++ test. The C/C++ suite contains 18 lexer tests,
+23 positive parser tests, 12 negative parser tests, five structural AST/type/
+recovery tests, and six CLI tests.
+
+Environment: GNU C++ 12.2.0, Flex 2.6.4, Bison 3.8.2, CMake 3.25.1, Linux.
+
+### Executed command
+
+```sh
+make test
+```
+
+### Actual results
+
+| Check | Expected | Actual | Result |
+| --- | --- | --- | --- |
+| Academic regression | All existing tests remain passing | `100% tests passed, 0 tests failed out of 13` | PASS |
+| C/C++ regression and Week 3 tests | All lexer, parser, AST, and CLI tests pass | `100% tests passed, 0 tests failed out of 64` | PASS |
+| Bison grammar | No grammar conflicts | Bison completed without conflict warnings | PASS |
+| Valid full parser sample | Exit 0; lexer/parser success; AST generated | `03-parser-full.cpp` parsed and its AST was generated | PASS |
+| Invalid syntax sample | Located diagnostic; exit 2; no AST | `04-syntax-errors.cpp` rejected at line 2, column 17 | PASS |
+| AST structure | Multiplication below addition; assignments right-associative | Both structures inspected by executed tests | PASS |
+| Recovery | Bad statement rejected without cascading errors | One diagnostic in the recovery fixture | PASS |
+
+No native Windows build was executed. Every Week 3 test's input, expected result,
+actual result, and status is listed in [week3-completion.md](week3-completion.md).
+
 ## C/C++ Migration Verification
 
 **Date:** 27 November 2026  

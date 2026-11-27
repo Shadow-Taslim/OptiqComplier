@@ -14,52 +14,65 @@ C/C++ Flex lexer                             Mini Flex lexer
 compiler/cpp-frontend/                       compiler/src/lexer.*
           │                                        │
           ▼                                        ▼
-Located C/C++ tokens                         Mini Bison parser
-and diagnostics                                        │
-          │                                            ▼
-          │                                    Mini typed AST
-          │                                            │
-          │                                            ▼
-          │                              Symbol table + semantic analysis
-          │                                            │
-          │                                            ▼
-          │                                    Three Address Code
-          ▼
-Future C/C++ parser → AST → semantics → IR → optimization → backend
-(only the C/C++ lexer is implemented in Weeks 1–2)
+Located tokens + diagnostics                  Mini Bison parser
+          │                                        │
+          ▼                                        ▼
+C/C++ token adapter                           Mini typed AST
+          │                                        │
+          ▼                                        ▼
+C/C++ Bison parser                     Symbol table + semantic analysis
+          │                                        │
+          ▼                                        ▼
+Preliminary C/C++ AST                           Three Address Code
+          │
+          ├── AST printer
+          └── Future semantics → IR → optimization → backend
 ```
 
 The two CMake projects produce separate executables, `optiq_cpp` and
-`optiq_cli`. No generated Flex/Bison source or global scanner state is shared.
+`optiq_cli`. No generated Flex/Bison source, grammar symbol, AST, or mutable
+scanner state is shared. Only the academic frontend currently performs semantic
+analysis and TAC generation.
 
 ## Primary C/C++ Frontend
 
 | Module | Files | Responsibility |
 | --- | --- | --- |
-| Public token model | `compiler/cpp-frontend/include/optiq/cpp/token.hpp` | Explicit token types, lexemes, and one-based source locations. |
-| Public diagnostics | `compiler/cpp-frontend/include/optiq/cpp/diagnostics.hpp` | Located lexical error records. |
-| Public lexer API | `compiler/cpp-frontend/include/optiq/cpp/lexer.hpp` | Source string to tokens plus all diagnostics; `success()` reports lexical validity. |
-| Flex rules | `compiler/cpp-frontend/src/lexer.l` | Longest-match tokens, literals, comments, preprocessor lines, and exclusive lexer states. |
-| Scanner state | `compiler/cpp-frontend/src/scanner_state.*` | Reentrant location tracking, keyword classification, literal validation, and diagnostic collection. |
-| Scanner driver | `compiler/cpp-frontend/src/lexer.cpp` | Initializes/destroys Flex safely, scans byte buffers, and returns an independent result. |
-| Token names | `compiler/cpp-frontend/src/token.cpp` | Stable uppercase names for CLI output and tests. |
-| CLI | `compiler/cpp-frontend/src/cli.cpp` | File or stdin input, token table, diagnostics, help, and exit codes 0/2/1. |
+| Public token model | `include/optiq/cpp/token.hpp` | Explicit token types, lexemes, and one-based source locations. |
+| Public diagnostics | `include/optiq/cpp/diagnostics.hpp` | Located lexical and syntax error records. |
+| Public lexer API | `include/optiq/cpp/lexer.hpp` | Source string to tokens plus lexical diagnostics. |
+| Flex rules | `src/lexer.l` | Longest-match tokens, literals, comments, preprocessor lines, and exclusive states. |
+| Scanner state | `src/scanner_state.*` | Reentrant location tracking, keyword classification, literal validation, and diagnostics. |
+| Scanner driver | `src/lexer.cpp` | Initializes/destroys Flex safely and returns independent results. |
+| Public parser API | `include/optiq/cpp/parser.hpp` | `ParseResult` with owned AST and separate lexical/syntax diagnostics. |
+| Bison grammar | `src/parser.y` | Subset CFG, precedence levels, declarations, statements, streams, AST construction, and recovery. |
+| Token adapter/parser driver | `src/parser.cpp` | Maps Flex tokens to Bison symbols, supplies EOF locations, and runs parsing. |
+| Parser context | `src/parser_context.hpp` | Token cursor, EOF location, AST result, and syntax diagnostics. |
+| AST model | `include/optiq/cpp/ast.hpp`, `src/ast.cpp` | Typed extensible nodes, source locations, and `unique_ptr` ownership. |
+| AST printer | `include/optiq/cpp/ast_printer.hpp`, `src/ast_printer.cpp` | Stable indented tree with node details and locations. |
+| Token names | `src/token.cpp` | Stable uppercase names for token output and tests. |
+| CLI | `src/cli.cpp` | `--tokens`, `--parse`, `--ast`, file/stdin input, diagnostics, and exit codes. |
+
+Paths in this table are relative to `compiler/cpp-frontend/`. See
+[parser-design.md](parser-design.md) for the integration details.
 
 ### C/C++ Design Decisions
 
-- **Reentrant Flex scanner.** Mutable scanning state belongs to one
-  `ScannerState`; concurrent or repeated tokenization does not rely on mutable
-  global result data.
-- **Complete tokenization.** The public API returns all valid tokens and all
-  collected diagnostics. Invalid characters do not hide later errors.
-- **Exclusive literal/comment states.** Strings, character literals, and block
-  comments cannot be confused with operators or comment markers in their text.
-- **Explicit unsupported behavior.** Invalid numbers, escapes, directives, and
-  unterminated constructs produce diagnostics instead of silent reinterpretation.
-- **Limited preprocessor tokens only.** Supported `#include`/`#define` lines
-  remain single tokens; no inclusion or macro expansion occurs.
-- **No premature AST reuse.** The mini AST encodes another language. A C/C++ AST
-  will be designed with its grammar in a later phase.
+- **Reentrant scanner and parser.** Each parse owns its token vector, parser
+  context, diagnostics, and AST. No global result data is shared.
+- **Unchanged Week 2 scanner.** Bison consumes the existing `LexResult` token
+  vector through a small adapter instead of requiring invasive Flex changes.
+- **Separate C/C++ AST.** The mini AST encodes another language and is not
+  reused. C/C++ nodes use `std::unique_ptr` and preserve source locations.
+- **Explicit grammar hierarchy.** Precedence and associativity are encoded by
+  expression nonterminals; dangling `else` has explicit precedence.
+- **Explicit unsupported behavior.** Invalid numbers, escapes, directives,
+  tokens, and unsupported syntax produce diagnostics rather than silent
+  reinterpretation.
+- **Limited preprocessor nodes.** Supported `#include`/`#define` lines remain
+  single tokens and AST leaves; no inclusion or expansion occurs.
+- **Failure has no public partial AST.** Recovery helps inspect later statements,
+  but `ParseResult::success()` remains false and the result program stays null.
 
 ## Academic Mini-Language Frontend
 
@@ -82,24 +95,34 @@ The formal grammar and semantic rules remain in
 
 ## Error Models
 
-| Executable | Exit code | Meaning |
+| Executable/mode | Exit code | Meaning |
 | --- | --- | --- |
-| `optiq_cpp` | `0` | C/C++ subset tokenized without lexical diagnostics |
-| `optiq_cpp` | `2` | One or more lexical diagnostics |
+| `optiq_cpp` | `0` | Requested tokenization, parsing, or AST printing succeeded |
+| `optiq_cpp` | `2` | One or more lexical or syntax diagnostics |
 | `optiq_cpp` | `1` | Command-line, file-I/O, or internal error |
 | `optiq_cli` | `0` | Mini-language program compiled to TAC |
 | `optiq_cli` | `2` | Mini-language lexical or syntax error |
 | `optiq_cli` | `3` | Mini-language semantic error |
 | `optiq_cli` | `1` | Internal compiler error |
 
+The C/C++ parser is not invoked after lexical failure. Syntax diagnostics use
+`source:line:column: syntax error: ...`; token mode retains its Week 2 diagnostic
+format.
+
 ## Testing Layers
 
-1. **C/C++ lexer categories:** eighteen CTest entries cover every requested
-   lexical category, positive and negative behavior, and exact locations.
-2. **C/C++ CLI acceptance:** full sample, invalid sample, and help entries.
-3. **Academic unit tests:** lexer, parser, AST, semantic analyzer, and TAC.
-4. **Academic golden files:** eleven programs compared with expected output.
-5. **Academic CLI tests:** file, argument, stdin, help, and failure modes.
+1. **C/C++ lexer categories:** eighteen entries cover every requested lexical
+   category, positive and negative behavior, and exact locations.
+2. **C/C++ positive parser tests:** twenty-three entries cover the documented
+   translation-unit, declaration, expression, control-flow, function, stream,
+   include, and namespace syntax.
+3. **C/C++ negative parser tests:** twelve entries require rejection and located
+   diagnostics for malformed syntax.
+4. **C/C++ structural tests:** five entries inspect precedence, assignment
+   associativity, AST locations/printing, recovery, and `void` restrictions.
+5. **C/C++ CLI acceptance:** six entries cover tokens, lexical errors, parse,
+   AST, syntax errors, and help.
+6. **Academic tests:** thirteen unit, golden, and CLI entries remain unchanged.
 
 The suites run separately with `make test-cpp` and `make test-mini`, or together
 with `make test`.
@@ -107,12 +130,12 @@ with `make test`.
 ## Build Architecture
 
 `compiler/CMakeLists.txt` remains the standalone academic project.
-`compiler/cpp-frontend/CMakeLists.txt` is the standalone C/C++ project. The
-root Makefile supplies convenience targets but does not create a dependency
-between either compiler.
+`compiler/cpp-frontend/CMakeLists.txt` is the standalone C/C++ project. The root
+Makefile supplies convenience targets but does not create a dependency between
+either compiler.
 
-CMake generates scanner/parser sources inside the selected build directory.
-The verified migration environment is GNU C++ 12.2, Flex 2.6.4, Bison 3.8.2,
-CMake 3.25.1 on Linux. Windows PowerShell commands use win_flex/win_bison with
-MinGW Makefiles; a separate native run is required before claiming Windows
+CMake generates scanner/parser sources inside the selected build directory. The
+verified Week 3 environment is GNU C++ 12.2, Flex 2.6.4, Bison 3.8.2, CMake
+3.25.1 on Linux. Windows PowerShell commands use win_flex/win_bison with MinGW
+Makefiles; a separate native run is required before claiming Windows
 verification.

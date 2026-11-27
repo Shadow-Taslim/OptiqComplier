@@ -23,7 +23,7 @@ academic frontend and is frozen separately on `academic-baseline`.
 - Provided token-table CLI output and automated positive/negative tests.
 - Re-ran the complete academic regression suite.
 
-## Week 3 — C/C++ Bison parser and preliminary AST (completed in this working tree)
+## Week 3 — C/C++ Bison parser and preliminary AST (completed)
 
 - Defined the supported context-free grammar and expression precedence ladder.
 - Added a reentrant Bison C++ parser using the existing Flex token stream.
@@ -39,8 +39,8 @@ academic frontend and is frozen separately on `academic-baseline`.
 - Re-ran both complete suites: 13/13 academic and 64/64 C/C++ tests passed.
 - Documented grammar boundaries and parser architecture.
 
-Week 3 completion applies to the locally tested working tree. Publishing the
-changes requires separate user authorization.
+Week 3 is published through normal commits on `main`. The executed verification
+record distinguishes local acceptance from the subsequent fresh-archive check.
 
 ## Week 4 — Semantic analysis (future; not implemented)
 
