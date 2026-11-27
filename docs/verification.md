@@ -1,6 +1,46 @@
 # Verification Record
 
-**Date:** 26 November 2026
+## C/C++ Migration Verification
+
+**Date:** 27 November 2026  
+**Milestone:** Week 1 architecture + Week 2 C/C++ lexer  
+**Result:** **PASS — 13/13 academic tests and 21/21 C/C++ tests**  
+**Repository state:** Local migration changes based on `academic-baseline` commit
+`5179118fbf40a5a9a50a90d31f02651c6e73b7e4`; not committed or pushed by this run.
+
+Environment: GNU C++ 12.2.0, Flex 2.6.4, Bison 3.8.2, CMake 3.25.1, Linux.
+
+### Executed commands
+
+```sh
+cmake -S compiler -B build/compiler -DOPTIQ_BUILD_TESTS=ON
+cmake --build build/compiler --parallel
+ctest --test-dir build/compiler --output-on-failure
+
+cmake -S compiler/cpp-frontend -B build/cpp-frontend -DOPTIQ_CPP_BUILD_TESTS=ON
+cmake --build build/cpp-frontend --parallel
+ctest --test-dir build/cpp-frontend --output-on-failure
+```
+
+### Actual results
+
+| Suite | Expected | Actual | Result |
+| --- | --- | --- | --- |
+| Academic configure/build | Existing compiler remains independently buildable | Standalone configure/build completed | PASS |
+| Academic CTest | Thirteen existing tests pass | `100% tests passed, 0 tests failed out of 13` | PASS |
+| C/C++ configure/build | New frontend independently builds with C++17/Flex | Standalone configure/build completed | PASS |
+| C/C++ CTest | Eighteen lexer categories plus three CLI tests pass | `100% tests passed, 0 tests failed out of 21` | PASS |
+| C/C++ valid sample | Full sample tokenizes with exit 0 | 48 tokens written to `examples/cpp-subset/01-full.tokens.txt`; exit 0 | PASS |
+| C/C++ invalid sample | Located diagnostics and exit 2 | Four diagnostics for malformed number, invalid escape, invalid character, unterminated comment; exit 2 | PASS |
+
+No compiler-warning or Bison-conflict output was observed in these executed
+builds. No native Windows build was executed; PowerShell instructions are
+provided but remain unverified here. Every C/C++ test's input, expected result,
+actual result, and status is listed in [week2-completion.md](week2-completion.md).
+
+## Historical Academic Verification
+
+**Date:** 26 November 2026  
 **Milestone:** Complete compiler front-end + TAC for the course-specified language
 **Result:** **PASS — clean configure/build, conflict-free grammar, 13/13 automated tests**  
 **Verified GitHub revision:** `3525ef2948af4ca7f0fb89209c0bbb4510efa9ac` (`main`)
